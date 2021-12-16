@@ -1,9 +1,11 @@
+#ifndef WAVE_H
+#define WAVE_H
 /**
- * http://truelogic.org/wordpress/2015/09/04/parsing-a-wav-file-in-c/ 
+ * modify from http://truelogic.org/wordpress/2015/09/04/parsing-a-wav-file-in-c/ 
  * Read and parse a wave file
  **/
 // WAVE file header format
-struct HEADER {
+struct WavHeader_t {
 	unsigned char riff[4];						// RIFF string
 	unsigned int overall_size	;				// overall size of file in bytes
 	unsigned char wave[4];						// WAVE string
@@ -21,7 +23,45 @@ struct HEADER {
 
 char* seconds_to_time(float raw_seconds);
 
-inline int read_wav(char * filename, HEADER& header, int fLoadSample, int fVerbose ) {
+inline void print_wav_header( WavHeader_t& header ){
+	const char * format_name;
+	switch(header.format_type){
+		case 1: format_name = "PCM"; break;
+		case 6: format_name = "A-law"; break;
+		case 7: format_name = "Mu-law"; break;
+		default: format_name = "unknown";
+	}
+	#define PRINT_CHAR_DATA(B1,B2,NAME,CHAR0) printf("(%d-%d) %s: ",B1,B2,NAME);for(int i = 0; i < B2-B1+1; i ++) putchar(CHAR0[i]);printf("\n");
+	PRINT_CHAR_DATA(1,4,"",header.riff);
+	printf("(5-8) Overall size: bytes:%u, Kb:%u \n", header.overall_size, header.overall_size/1024);
+	PRINT_CHAR_DATA( 9,12,"Wave marker",header.wave);
+	PRINT_CHAR_DATA(13,16,"Fmt marker",header.fmt_chunk_marker);
+	printf("(17-20) Length of Fmt header: %u \n", header.length_of_fmt);
+	PRINT_CHAR_DATA(21,22,"Format type", format_name);
+	printf("(23-24) Channels: %u \n", header.channels);
+	printf("(25-28) Sample rate: %u\n", header.sample_rate);
+	printf("(29-32) Byte Rate: %u , Bit Rate:%u\n", header.byterate, header.byterate*8);
+	printf("(33-34) Block Alignment: %u \n", header.block_align);
+	printf("(35-36) Bits per sample: %u \n", header.bits_per_sample);
+	PRINT_CHAR_DATA(37,40, "Data Marker", header.data_chunk_header);
+	printf("(41-44) Size of data chunk: %u \n", header.data_size);
+	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_sample);
+	printf("Number of samples:%lu \n", num_samples);
+
+	long size_of_each_sample = (header.channels * header.bits_per_sample) / 8;
+	printf("Size of each sample:%ld bytes\n", size_of_each_sample);
+
+	// calculate duration of file
+	float duration_in_seconds = (float) header.overall_size / header.byterate;
+	printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
+	printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
+
+}
+
+
+
+
+inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) {
 
 	unsigned char buffer4[4];
 	unsigned char buffer2[2];
@@ -186,8 +226,8 @@ inline int read_wav(char * filename, HEADER& header, int fLoadSample, int fVerbo
 		printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
 		printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
 	}
-
-
+	fclose(ptr);
+	return 0;
 
 	// read each sample from data chunk if PCM
 	if (header.format_type == 1) { // PCM
@@ -285,6 +325,8 @@ inline int read_wav(char * filename, HEADER& header, int fLoadSample, int fVerbo
 }
 
 
+
+
 /**
  * Convert seconds into hh:mm:ss format
  * Params:
@@ -318,3 +360,4 @@ inline char* seconds_to_time(float raw_seconds){
 	return hms;
 }
 
+#endif
