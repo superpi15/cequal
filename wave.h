@@ -42,7 +42,7 @@ inline void print_wav_header( WavHeader_t& header ){
 	printf("(25-28) Sample rate: %u\n", header.sample_rate);
 	printf("(29-32) Byte Rate: %u , Bit Rate:%u\n", header.byterate, header.byterate*8);
 	printf("(33-34) Block Alignment: %u \n", header.block_align);
-	printf("(35-36) Bits per sample: %u \n", header.bits_per_sample);
+	printf("(35-36) Bits per channel: %u \n", header.bits_per_sample);
 	PRINT_CHAR_DATA(37,40, "Data Marker", header.data_chunk_header);
 	printf("(41-44) Size of data chunk: %u \n", header.data_size);
 	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_sample);
@@ -193,7 +193,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	header.bits_per_sample = buffer2[0] |
 					(buffer2[1] << 8);
 	if( fVerbose )
-		printf("(35-36) Bits per sample: %u \n", header.bits_per_sample);
+		printf("(35-36) Bits per channel: %u \n", header.bits_per_sample);
 
 	read = fread(header.data_chunk_header, sizeof(header.data_chunk_header), 1, ptr);
 	if( fVerbose )

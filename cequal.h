@@ -3,7 +3,10 @@
 
 #include <string>
 #include <iostream>
+#include <vector>
 #include "wave.h"
+
+#include "math.h"
 
 class Ceq_Man_t {
 public:
@@ -19,9 +22,19 @@ public:
 	void setDefault();
 	void dumpSample();
 	void writeHeader( std::ostream& ostr );
+
+	float time_stamp;                // keep progress for dynamic adjustment 
+	std::vector<float> vBandGain;    // gain of each band 
+
+	void runFilter();
 };
 
-void Ceq_Man_t::dumpSample(){
+inline void Ceq_Man_t::setDefault(){
+	nBand = 6;
+	vBandGain.resize(6,(float)1.0f/nBand);
+}
+
+inline void Ceq_Man_t::runFilter(){
 	FILE * fptr = fopen(filename.c_str(),"r");
 	if( !fptr ){
 		printf("Cannot open \'%s\'\n", filename.c_str());
@@ -31,10 +44,28 @@ void Ceq_Man_t::dumpSample(){
 		printf("Invalid header of \'%s\'\n", filename.c_str());
 		return;
 	}
+	long bytes_per_sample = (header.channels * header.bits_per_sample) / 8;
+	long bytes_in_each_channel = (bytes_per_sample / header.channels);
 	fclose(fptr);
 }
 
-void Ceq_Man_t::writeHeader( std::ostream& ostr ){
+
+inline void Ceq_Man_t::dumpSample(){
+	FILE * fptr = fopen(filename.c_str(),"r");
+	if( !fptr ){
+		printf("Cannot open \'%s\'\n", filename.c_str());
+		return;
+	}
+	if( fseek(fptr, 44, SEEK_SET) ){
+		printf("Invalid header of \'%s\'\n", filename.c_str());
+		return;
+	}
+	long bytes_per_sample = (header.channels * header.bits_per_sample) / 8;
+	long bytes_in_each_channel = (bytes_per_sample / header.channels);
+	fclose(fptr);
+}
+
+inline void Ceq_Man_t::writeHeader( std::ostream& ostr ){
 	unsigned int i;
 	int j = 0;
 	for(i = 0; i < 4; i ++, j++) ostr << header.riff[i];
@@ -61,10 +92,6 @@ void Ceq_Man_t::writeHeader( std::ostream& ostr ){
 	for(i = 0; i < 4; i ++, j++) ostr << header.data_chunk_header[i];
 	//41-44
 	for(i = 0; i < 4; i ++, j++) ostr << (unsigned char)( (header.data_size >> i*8) & 0xff );
-}
-
-void Ceq_Man_t::setDefault(){
-	nBand = 1024;
 }
 
 #endif

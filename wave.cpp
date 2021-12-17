@@ -13,5 +13,4 @@ int main(int argc, char **argv) {
 	//std::ofstream ostr("tmp.wav");
 	//ceq.writeHeader(ostr);
 	return 0;
-
 }
