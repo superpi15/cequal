@@ -16,7 +16,7 @@ struct WavHeader_t {
 	unsigned int sample_rate;					// sampling rate (blocks per second)
 	unsigned int byterate;						// SampleRate * NumChannels * BitsPerSample/8
 	unsigned int block_align;					// NumChannels * BitsPerSample/8
-	unsigned int bits_per_sample;				// bits per sample, 8- 8bits, 16- 16 bits etc
+	unsigned int bits_per_channel;				// bits per sample, 8- 8bits, 16- 16 bits etc
 	unsigned char data_chunk_header [4];		// DATA string or FLLR string
 	unsigned int data_size;						// NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
 };
@@ -42,19 +42,19 @@ inline void print_wav_header( WavHeader_t& header ){
 	printf("(25-28) Sample rate: %u\n", header.sample_rate);
 	printf("(29-32) Byte Rate: %u , Bit Rate:%u\n", header.byterate, header.byterate*8);
 	printf("(33-34) Block Alignment: %u \n", header.block_align);
-	printf("(35-36) Bits per channel: %u \n", header.bits_per_sample);
+	printf("(35-36) Bits per channel: %u \n", header.bits_per_channel);
 	PRINT_CHAR_DATA(37,40, "Data Marker", header.data_chunk_header);
 	printf("(41-44) Size of data chunk: %u \n", header.data_size);
-	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_sample);
+	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
 	printf("Number of samples:%lu \n", num_samples);
 
-	long size_of_each_sample = (header.channels * header.bits_per_sample) / 8;
+	long size_of_each_sample = (header.channels * header.bits_per_channel) / 8;
 	printf("Size of each sample:%ld bytes\n", size_of_each_sample);
 
 	// calculate duration of file
 	float duration_in_seconds = (float) header.overall_size / header.byterate;
 	printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
-	printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
+	//printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
 
 }
 
@@ -190,10 +190,10 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("%u %u \n", buffer2[0], buffer2[1]);
 
-	header.bits_per_sample = buffer2[0] |
+	header.bits_per_channel = buffer2[0] |
 					(buffer2[1] << 8);
 	if( fVerbose )
-		printf("(35-36) Bits per channel: %u \n", header.bits_per_sample);
+		printf("(35-36) Bits per channel: %u \n", header.bits_per_channel);
 
 	read = fread(header.data_chunk_header, sizeof(header.data_chunk_header), 1, ptr);
 	if( fVerbose )
@@ -212,11 +212,11 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 
 
 	// calculate no.of samples
-	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_sample);
+	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
 	if( fVerbose )
 		printf("Number of samples:%lu \n", num_samples);
 
-	long size_of_each_sample = (header.channels * header.bits_per_sample) / 8;
+	long size_of_each_sample = (header.channels * header.bits_per_channel) / 8;
 	if( fVerbose )
 		printf("Size of each sample:%ld bytes\n", size_of_each_sample);
 
@@ -251,7 +251,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 				long low_limit = 0l;
 				long high_limit = 0l;
 
-				switch (header.bits_per_sample) {
+				switch (header.bits_per_channel) {
 					case 8:
 						low_limit = -128;
 						high_limit = 127;
@@ -357,6 +357,7 @@ inline char* seconds_to_time(float raw_seconds){
 
 
 	sprintf(hms, "%d:%d:%d.%d", hours, minutes, seconds, milliseconds);
+	free(hms);
 	return hms;
 }
 
