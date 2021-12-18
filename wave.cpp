@@ -10,11 +10,11 @@ int main(int argc, char **argv) {
 	Ceq_Man_t ceq(argv[1]);
 	print_wav_header(ceq.header);
 
-	std::ofstream ostr1("tmp.wav");
-	std::ofstream ostr2("tmp.plot");
-	ceq.runFilter(&ostr1);
-	ceq.runFilter(&ostr2,1);
+	std::ofstream ostr1("tmp.wav");\
+	ceq.run_prefetch_filter(&ostr1);\
 	ostr1.close();
+	//std::ofstream ostr2("tmp.plot");\
+	ceq.run_prefetch_filter(&ostr2,1);\
 	ostr2.close();
 	//std::ofstream ostr("tmp.plot");\
 	ceq.runFilter(&ostr,1);
