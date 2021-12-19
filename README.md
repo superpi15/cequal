@@ -1,4 +1,32 @@
-# cequal
+# cequal: C-based equalizer for educational purpose 
+
+This equalizer demonstrates a typical conversion between time and frequency -domain, often applied to audio processing. 
+
+* The current implementation uses smooth sine wave for sampling, in order to show numerical concept of DFT. 
+* The square wave and thus FFT may be supported later. 
+
+This document is exported from: [https://github.com/superpi15/cequal/](https://github.com/superpi15/cequal/)
+
+## system prerequisite 
+
+* Open MP
+* g++ 
+
+## compile
+```shell
+sh compile.sh
+```
+
+## run 
+
+```shell
+./cequal <YOUR_WAV_FILE>
+```
+Output file is named *tmp.wav*.
+
+--- --- ---
+
+## implementation notes 
 
 ![](https://latex.codecogs.com/svg.latex?{e^{i\phi}=\cos{\phi}+i\sin{\phi}})
 
