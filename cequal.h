@@ -1,3 +1,7 @@
+/*
+ * Cequal: C-based equalizer for educational purpose 
+ */
+
 #ifndef CEQUAL_H
 #define CEQUAL_H
 
@@ -140,23 +144,33 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 
 	for(int i = 0; i < num_samples; i ++){
 		for(int j = 0; j < header.channels; j ++){
+			#pragma omp parallel for num_threads(8)
 			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-				double img = 0, real = 0;
+				//double img = 0;
+				double real = 0;
 				for(int l = 0; l < size_of_window; l ++){
-					img  += (double) vData[j][l+i] * vFMatrixSin[k][l];// * vWindow[k];
+					//img  += (double) vData[j][l+i] * vFMatrixSin[k][l];// * vWindow[k];
 					real += (double) vData[j][l+i] * vFMatrixCos[k][l];// * vWindow[k];
 				}
-				vImg [k] = img;
+				//vImg [k] = img;
 				vReal[k] = real;
 			}
 
-			for(int l = 0; l < size_of_window; l ++){
-				double real = 0;
-				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-					real += vReal[k] * vFMatrixCosInv[k][l] - vImg[k] * vFMatrixSinInv[k][l];
-				}
-				vDataOut[j][i] = real/size_of_window;
+/* only used for smooth by window overlapping */
+//			#pragma omp parallel for num_threads(4)
+//			for(int l = 0; l < size_of_window; l ++){
+//				double real = 0;
+//				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+//					real += vReal[k] * vFMatrixCosInv[k][l];// - vImg[k] * vFMatrixSinInv[k][l];
+//				}
+//				vDataOut[j][i] = real/size_of_window;
+//			}
+
+			double real = 0;
+			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+				real += vReal[k] * vFMatrixCosInv[k][half_window_size];// - vImg[k] * vFMatrixSinInv[k][l];
 			}
+			vDataOut[j][i] = real/size_of_window;
 		}
 	}
 

@@ -1,9 +1,10 @@
+/*
+ * Cequal: C-based equalizer for educational purpose 
+ * The header definition is modified from http://truelogic.org/wordpress/2015/09/04/parsing-a-wav-file-in-c/ 
+ */
 #ifndef WAVE_H
 #define WAVE_H
-/**
- * modify from http://truelogic.org/wordpress/2015/09/04/parsing-a-wav-file-in-c/ 
- * Read and parse a wave file
- **/
+
 // WAVE file header format
 struct WavHeader_t {
 	unsigned char riff[4];						// RIFF string
@@ -20,8 +21,6 @@ struct WavHeader_t {
 	unsigned char data_chunk_header [4];		// DATA string or FLLR string
 	unsigned int data_size;						// NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
 };
-
-char* seconds_to_time(float raw_seconds);
 
 inline void print_wav_header( WavHeader_t& header ){
 	const char * format_name;
@@ -54,7 +53,6 @@ inline void print_wav_header( WavHeader_t& header ){
 	// calculate duration of file
 	float duration_in_seconds = (float) header.overall_size / header.byterate;
 	printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
-	//printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
 
 }
 
@@ -224,141 +222,12 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	float duration_in_seconds = (float) header.overall_size / header.byterate;
 	if( fVerbose ){
 		printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
-		printf("Approx.Duration in h:m:s=%s\n", seconds_to_time(duration_in_seconds));
 	}
 	fclose(ptr);
 	return 0;
 
-	// read each sample from data chunk if PCM
-	if (header.format_type == 1) { // PCM
-		printf("Dump sample data? Y/N?");
-		char c = 'n';
-		scanf("%c", &c);
-		if (c == 'Y' || c == 'y') { 
-			long i =0;
-			char data_buffer[size_of_each_sample];
-			int  size_is_correct = 1;
-
-			// make sure that the bytes-per-sample is completely divisible by num.of channels
-			long bytes_in_each_channel = (size_of_each_sample / header.channels);
-			if ((bytes_in_each_channel  * header.channels) != size_of_each_sample) {
-				printf("Error: %ld x %ud <> %ld\n", bytes_in_each_channel, header.channels, size_of_each_sample);
-				size_is_correct = 0;
-			}
-
-			if (size_is_correct) {
-						// the valid amplitude range for values based on the bits per sample
-				long low_limit = 0l;
-				long high_limit = 0l;
-
-				switch (header.bits_per_channel) {
-					case 8:
-						low_limit = -128;
-						high_limit = 127;
-						break;
-					case 16:
-						low_limit = -32768;
-						high_limit = 32767;
-						break;
-					case 32:
-						low_limit = -2147483648;
-						high_limit = 2147483647;
-						break;
-				}					
-
-				printf("nn.Valid range for data values : %ld to %ld \n", low_limit, high_limit);
-				for (i =1; i <= num_samples; i++) {
-					printf("==========Sample %ld / %ld=============\n", i, num_samples);
-					read = fread(data_buffer, sizeof(data_buffer), 1, ptr);
-					if (read == 1) {
-					
-						// dump the data read
-						unsigned int  xchannels = 0;
-						int data_in_channel = 0;
-						int offset = 0; // move the offset for every iteration in the loop below
-						for (xchannels = 0; xchannels < header.channels; xchannels ++ ) {
-							printf("Channel#%d : ", (xchannels+1));
-							// convert data from little endian to big endian based on bytes in each channel sample
-							if (bytes_in_each_channel == 4) {
-								data_in_channel = (data_buffer[offset] & 0x00ff) | 
-													((data_buffer[offset + 1] & 0x00ff) <<8) | 
-													((data_buffer[offset + 2] & 0x00ff) <<16) | 
-													(data_buffer[offset + 3]<<24);
-							}
-							else if (bytes_in_each_channel == 2) {
-								data_in_channel = (data_buffer[offset] & 0x00ff) |
-													(data_buffer[offset + 1] << 8);
-							}
-							else if (bytes_in_each_channel == 1) {
-								data_in_channel = data_buffer[offset] & 0x00ff;
-								data_in_channel -= 128; //in wave, 8-bit are unsigned, so shifting to signed
-							}
-
-							offset += bytes_in_each_channel;		
-							printf("%d ", data_in_channel);
-
-							// check if value was in range
-							if (data_in_channel < low_limit || data_in_channel > high_limit)
-								printf("**value out of range\n");
-
-							printf(" | ");
-						}
-
-						printf("\n");
-					}
-					else {
-						printf("Error reading file. %d bytes\n", read);
-						break;
-					}
-
-				} // 	for (i =1; i <= num_samples; i++) {
-
-			} // 	if (size_is_correct) { 
-
-		} // if (c == 'Y' || c == 'y') { 
-	} //  if (header.format_type == 1) { 
-
-	printf("Closing file..\n");
-	fclose(ptr);
-	return 0;
-
 }
 
 
-
-
-/**
- * Convert seconds into hh:mm:ss format
- * Params:
- *	seconds - seconds value
- * Returns: hms - formatted string
- **/
-inline char* seconds_to_time(float raw_seconds){
-	char *hms;
-	int hours, hours_residue, minutes, seconds, milliseconds;
-	hms = (char*) malloc(100);
-
-	sprintf(hms, "%f", raw_seconds);
-
-	hours = (int) raw_seconds/3600;
-	hours_residue = (int) raw_seconds % 3600;
-	minutes = hours_residue/60;
-	seconds = hours_residue % 60;
-	milliseconds = 0;
-
-	// get the decimal part of raw_seconds to get milliseconds
-	char *pos;
-	pos = strchr(hms, '.');
-	int ipos = (int) (pos - hms);
-	char decimalpart[15];
-	memset(decimalpart, ' ', sizeof(decimalpart));
-	strncpy(decimalpart, &hms[ipos+1], 3);
-	milliseconds = atoi(decimalpart);	
-
-
-	sprintf(hms, "%d:%d:%d.%d", hours, minutes, seconds, milliseconds);
-	free(hms);
-	return hms;
-}
 
 #endif

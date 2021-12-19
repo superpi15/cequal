@@ -1,3 +1,7 @@
+/*
+ * Cequal: C-based equalizer for educational purpose 
+ */
+
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +11,10 @@
 #include <fstream>
 
 int main(int argc, char **argv) {
+	if( argc < 2 ){
+		printf("Usage: ./program <*.WAV>\n");
+		return 0;
+	}
 	Ceq_Man_t ceq(argv[1]);
 	print_wav_header(ceq.header);
 
