@@ -36,6 +36,7 @@ public:
 
 	void runFilter(std::ostream * postr=NULL, int fPlot=0);
 	void run_prefetch_filter(std::ostream * postr=NULL, int fPlot=0);
+	void run_prefetch_fft(std::ostream * postr=NULL, int fPlot=0);
 	int window_size;
 };
 
@@ -57,6 +58,70 @@ inline void Ceq_Man_t::setDefault(){
 		vWindow[i] = 0.5 - 0.5 * cos( (double) 2 * CEQUAL_PI * (i+0.5) / window_size );
 	}
 }
+
+class Cpx_t {
+public:
+	double real, img;
+	Cpx_t(double _real, double _img): real(_real), img(_img) {}
+	Cpx_t(): real(0), img(0){}
+	void print(){printf("(%f,%f)",real,img);}
+
+};
+inline Cpx_t operator*(const Cpx_t& n1, const Cpx_t& n2){
+	return Cpx_t( n1.real * n2.real - n1.img * n2.img, n1.real * n2.img + n1.img * n2.real );
+}
+inline Cpx_t operator+(const Cpx_t& n1, const Cpx_t& n2){
+	return Cpx_t( n1.real + n2.real, n1.img + n2.img );
+}
+inline Cpx_t operator-(const Cpx_t& n1, const Cpx_t& n2){
+	return Cpx_t( n1.real - n2.real, n1.img - n2.img );
+}
+inline void run_fft(const std::vector<double>& vDataIn, std::vector<double>& vDataOut){
+	std::vector<Cpx_t> vCpxIn, vResult;
+	int size_of_window = vDataIn.size();
+	
+	for(int i = size_of_window; i > 0 ; i >>=1 )
+		assert( !(i&1) || 1==i );
+
+	int half_window_size = size_of_window/2;
+	vCpxIn .resize(size_of_window);
+	vResult.resize(size_of_window);
+	for(int i = 0; i < half_window_size; i +=2){
+		vCpxIn[ i ]    = Cpx_t( vDataIn[ i ], 0 );
+		vCpxIn[ i + 1] = Cpx_t( vDataIn[ i + half_window_size ], 0 );
+		vCpxIn[ i + half_window_size ]     = Cpx_t( vDataIn[i + 1 ], 0 );
+		vCpxIn[ i + half_window_size + 1 ] = Cpx_t( vDataIn[i + 1 + half_window_size ], 0 );
+	}
+
+	//std::vector<std::vector<double> > vSin, vCos;
+
+	int ffstep, fflevel;
+	for(ffstep = 2, fflevel = 1; ffstep <= size_of_window; ffstep <<= 1, fflevel <<=1 ){
+		double angular_unit = CEQUAL_PI / (ffstep>>1);
+		Cpx_t w = Cpx_t(sin(angular_unit), cos(angular_unit));
+		//#pragma omp parallel for num_threads(8)
+		for(int i = 0; i < size_of_window; i += ffstep ){ // iterate groups of nodes on current layer 
+			for(int j = 0; j < ffstep; j ++){             // iterate nodes in a window  
+				int idx0 = i+j;
+				int idx1 = i+(j+(ffstep>>1))%ffstep;
+				if( idx0 > idx1 ) std::swap( idx0, idx1 );
+				vResult[i+j] = vCpxIn[idx0] + Cpx_t(j<(ffstep>>1)? 1.0f: -1.0f, 0 ) * vCpxIn[idx1] * w;
+			}
+		}
+		vCpxIn.swap(vResult);
+	//	if(fflevel==2)
+	//	break;
+	}
+	//exit(0);
+
+	if( vDataIn.size() < size_of_window )
+		vDataOut.resize( size_of_window );
+//	for(int i = 0; i < size_of_window; i ++)
+//		vDataOut[i] = vCpxIn[size_of_window-1-i].real;
+	for(int i = 0; i < size_of_window; i ++)
+		vDataOut[i] = vCpxIn[i].real;
+}
+
 
 inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 	FILE * fptr = fopen(filename.c_str(),"r");
@@ -97,6 +162,7 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 	printf("max freq    %6d\n", max_freq);
 	printf("window size %6d\n", size_of_window);
 	printf("min freq    %7.3f\n", min_freq);
+	printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
 	vFMatrixSin.resize(size_of_window);
 	vFMatrixCos.resize(size_of_window);
 	vFMatrixSinInv.resize(size_of_window);
@@ -144,17 +210,26 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 
 	for(int i = 0; i < num_samples; i ++){
 		for(int j = 0; j < header.channels; j ++){
-			#pragma omp parallel for num_threads(8)
-			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-				//double img = 0;
-				double real = 0;
-				for(int l = 0; l < size_of_window; l ++){
-					//img  += (double) vData[j][l+i] * vFMatrixSin[k][l];// * vWindow[k];
-					real += (double) vData[j][l+i] * vFMatrixCos[k][l];// * vWindow[k];
-				}
-				//vImg [k] = img;
-				vReal[k] = real;
+
+			// DFT 
+//			#pragma omp parallel for num_threads(8)
+//			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+//				//double img = 0;
+//				double real = 0;
+//				for(int l = 0; l < size_of_window; l ++){
+//					//img  += (double) vData[j][l+i] * vFMatrixSin[k][l];// * vWindow[k];
+//					real += (double) vData[j][l+i] * vFMatrixCos[k][l];// * vWindow[k];
+//				}
+//				//vImg [k] = img;
+//				vReal[k] = real;
+//			}
+
+			std::vector<double> vDataTmp;
+			vDataTmp.resize(size_of_window);
+			for(int l = 0; l < size_of_window; l ++){
+				vDataTmp[l] = vData[j][l+i];
 			}
+			run_fft(vDataTmp, vReal);
 
 /* only used for smooth by window overlapping */
 //			#pragma omp parallel for num_threads(4)
@@ -170,7 +245,7 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
 				real += vReal[k] * vFMatrixCosInv[k][half_window_size];// - vImg[k] * vFMatrixSinInv[k][l];
 			}
-			vDataOut[j][i] = real/size_of_window;
+			vDataOut[j][i] = 1.4*real/size_of_window;
 		}
 	}
 
@@ -189,175 +264,6 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 
 FINALIZE:
 	free(data_buffer);
-	fclose(fptr);
-}
-
-inline void Ceq_Man_t::runFilter(std::ostream * postr, int fPlot){
-	printf("Window: ");
-	for(int i = 0; i < nBand; i ++)
-		printf("%7.5f ", vWindow[i]);
-	printf("\n");
-	printf("Band gain: ");
-	for(int i = 0; i < nBand; i ++)
-		printf("%9.3f ", vBandGain[i]);
-	printf("\n");
-	printf("Band freq: ");
-	for(int i = 0; i < nBand; i ++)
-		printf("%9.3f ", vBandOmega[i]/CEQUAL_PI);
-	printf("\n");
-	FILE * fptr = fopen(filename.c_str(),"r");
-	if( !fptr ){
-		printf("Cannot open \'%s\'\n", filename.c_str());
-		return;
-	}
-	if( fseek(fptr, 44, SEEK_SET) ){
-		printf("Invalid header of \'%s\'\n", filename.c_str());
-		return;
-	}
-	long bytes_per_sample = (header.channels * header.bits_per_channel) / 8;
-	long bytes_per_channel = (bytes_per_sample / header.channels);
-	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
-	char * data_buffer = (char*) malloc(bytes_per_sample);
-
-	int ** data_ring = (int**) malloc(header.channels*sizeof(void*));
-	for(int i = 0; i < header.channels; i++ )
-		data_ring[i] = (int*) malloc(this->window_size*sizeof(int));
-
-	if(postr && !fPlot) writeHeader(*postr);
-
-	std::vector<double> vFreqAmpR(this->nBand,0.0f);
-	std::vector<double> vFreqAmpI(this->nBand,0.0f);
-	std::vector<double> vTimeAmp(this->window_size,0.0f);
-
-	int i;
-	//double eplasedTime = 0;
-	int half_window_size = this->window_size/2;
-	for(i = 0; i < num_samples; i ++){
-		//double eplasedTime = (double) ((int)i%header.sample_rate)/header.sample_rate;
-		//eplasedTime = (double) i/header.sample_rate;
-		//printf("t %8.6f: ", eplasedTime);
-
-		int data_top, window_begin;
-		//double time_begin;
-		data_top = (i+half_window_size) % this->window_size;
-		window_begin = i % this->window_size;
-		//time_begin = (double) (i-this->window_size+1)/ header.sample_rate;
-		if(!fread(data_buffer,bytes_per_sample,1,fptr)){
-			printf("Data loading mismatch\n");
-			goto FINALIZE;
-		}
-		for(int j = 0; j < header.channels; j ++){
-			int channel_data_in = 0, channel_data_out = 0;
-			for(int k = 0; k < bytes_per_channel; k ++ )
-				channel_data_in |= (data_buffer[ j*bytes_per_channel + k ]&(k==bytes_per_channel-1? ~0: 0x00ff)) << (8*k);
-			if( 1 == bytes_per_channel )
-				channel_data_in -= 128;
-			data_ring[j][data_top] = channel_data_in;
-
-
-			for(int k = 0; k < nBand; k ++){
-				vFreqAmpI[k] = 0;
-				vFreqAmpR[k] = 0;
-				for(int l = 0; l < this->window_size; l ++ ){
-					int idx = (window_begin+l) % this->window_size;
-					int cur_time = (double)(i-half_window_size+l) / header.sample_rate;
-					vFreqAmpI[k] += (double) data_ring[j][idx] /**/ * vWindow[l]/**/ * sin(cur_time * vBandOmega[k]);// * vBandGain[k];
-					vFreqAmpR[k] += (double) data_ring[j][idx] /**/ * vWindow[l]/**/ * cos(cur_time * vBandOmega[k]);// * vBandGain[k];
-				}
-			}
-			
-			for(int k = 0; k < this->window_size; k ++){
-				//int idx = (window_begin+k) % this->window_size;
-				int cur_time = (double)(i-half_window_size+k) / header.sample_rate;
-				//vTimeAmp[k] = 0;
-				double Real = 0, Img = 0;
-				for(int l = 0; l < nBand; l ++){
-					Real += (double) 
-						vFreqAmpR[l] * cos( - vBandOmega[l] * cur_time ) +
-						vFreqAmpI[l] * sin( - vBandOmega[l] * cur_time ) ;
-//					Img += (double) 
-//						vFreqAmpI[l] * cos( - vBandOmega[l] * cur_time ) +
-//						vFreqAmpR[l] * sin( - vBandOmega[l] * cur_time ) ;
-				}
-				//vTimeAmp[k] = (double) (0<Real?1:-1) * sqrt(Real*Real + Img*Img) / nBand;
-				vTimeAmp[k] = (double)Real/nBand;
-				if(postr && fPlot) (*postr)<< vTimeAmp[k] << " ";
-			}
-			if(postr && fPlot) (*postr) << "\n";
-			channel_data_out = vTimeAmp[half_window_size];
-			//if(postr && fPlot) (*postr)<< channel_data_out << "\n";
-			for(int k = 0; k < bytes_per_channel; k ++ )
-				data_buffer[ j*bytes_per_channel + k ] = (channel_data_out >> (8*k)) & 0x00ff;
-
-		}
-		if(postr && !fPlot) postr->write( data_buffer, bytes_per_sample );
-/**
-		for(int j = 0; j < nBand; j ++){
-			//vBandAmpCache[j] = (sin( eplasedTime * vBandOmega[j] )+1.0f)/2.0f;
-			vBandAmpCacheF[j] = sin( eplasedTime * vBandOmega[j] );
-			vBandAmpCacheB[j] = sin( -eplasedTime * vBandOmega[j] );
-		}
-
-		for(int j = 0; j < header.channels; j ++){
-			int channel_data_in = 0, channel_data_out = 0;
-			for(int k = 0; k < bytes_per_channel; k ++ ){
-//				printf(" %4d ", data_buffer[ j*bytes_per_channel + k ] );
-				channel_data_in |= (data_buffer[ j*bytes_per_channel + k ]&(k==bytes_per_channel-1? ~0: 0x00ff)) << (8*k);
-			}
-			if( 1 == bytes_per_channel )
-				channel_data_in -= 128;
-			
-//			printf("(");
-			double tmp_data_out = 0, tmp_data_out2 = 0;;
-			for(int k = 0; k < nBand; k ++){
-//				printf("  %5.2f  ", vBandAmpCache[k] * vBandGain[k] );
-				vBandChannelCache[k] = (double)channel_data_in * vBandAmpCacheF[k];// * vBandGain[k];
-			}
-			for(int k = 0; k < nBand; k ++){
-//				printf("  %5.2f  ", vBandAmpCache[k] * vBandGain[k] );
-				tmp_data_out2 += (double)tmp_data_out * vBandAmpCacheB[k];// * vBandGain[k];
-			}
-			tmp_data_out = (double) tmp_data_out2/this->nBand;
-			//printf(" %7d %10.6f \n",channel_data_in, tmp_data_out);
-			channel_data_out = tmp_data_out;
-			if(postr && fPlot) (*postr)<< channel_data_out << "\n";
-//			(*postr) << channel_data_out << "\n";
-
-			//printf(")");
-//			printf(": in %6d out %6d :",channel_data_in, channel_data_out);
-
-			for(int k = 0; k < bytes_per_channel; k ++ ){
-				data_buffer[ j*bytes_per_channel + k ] = (channel_data_out >> (8*k)) & 0x00ff;
-//				printf(" %4d ", data_buffer[ j*bytes_per_channel + k ] );
-			}
-//			printf("\n");
-		}
-		if(postr && !fPlot) postr->write( data_buffer, bytes_per_sample );
-		/**/
-	}
-
-FINALIZE:
-	printf("Scanned samples: %d\n", i);
-	for(int i = 0; i < header.channels; i++ )
-		free(data_ring[i]);
-	free(data_ring);
-	free(data_buffer);
-	fclose(fptr);
-}
-
-
-inline void Ceq_Man_t::dumpSample(){
-	FILE * fptr = fopen(filename.c_str(),"r");
-	if( !fptr ){
-		printf("Cannot open \'%s\'\n", filename.c_str());
-		return;
-	}
-	if( fseek(fptr, 44, SEEK_SET) ){
-		printf("Invalid header of \'%s\'\n", filename.c_str());
-		return;
-	}
-	long bytes_per_sample = (header.channels * header.bits_per_channel) / 8;
-	long bytes_in_each_channel = (bytes_per_sample / header.channels);
 	fclose(fptr);
 }
 

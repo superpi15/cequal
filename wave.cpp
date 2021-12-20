@@ -24,9 +24,6 @@ int main(int argc, char **argv) {
 	//std::ofstream ostr2("tmp.plot");\
 	ceq.run_prefetch_filter(&ostr2,1);\
 	ostr2.close();
-	//std::ofstream ostr("tmp.plot");\
-	ceq.runFilter(&ostr,1);
-	//ceq.writeHeader(ostr);
 	
 	return 0;
 }
