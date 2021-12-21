@@ -57,3 +57,35 @@ Consider a frequency from a selected set of band ![](https://latex.codecogs.com/
 Shown above indicates that band frequency can be first converted into angular freqency 
 ![](https://latex.codecogs.com/svg.latex?{\omega})
 to reduce computation overhead. 
+
+
+###FFT 
+Define 
+![](https://latex.codecogs.com/svg.latex?{W_N=e^{-j(2\pi/N)}}), DFT has the form 
+
+<p align="center">
+<img src="https://latex.codecogs.com/svg.latex?{X(k)=\sum^{N-1}_{n=0}x(n)W^{kn}_{N}}"/>
+</p>
+
+Partition into even and odd part 
+
+<p align="center">
+<img src="https://latex.codecogs.com/svg.latex?{X(k)=\sum^{N-1}_{r=0,n=2r}x(n)W^{kn}_{N}+\sum^{N-1}_{r=0,n=2r+1}x(n)W^{kn}_{N}}"/>
+</p>
+
+Using the identiry 
+![](https://latex.codecogs.com/svg.latex?{W^2_N=(e^{-j(2\pi/N)})^2=e^{-j(2\pi/(N/2))}=W_{N/2}})
+
+<p align="center">
+<img src="https://latex.codecogs.com/svg.latex?{X(k)=\sum^{N/2-1}_{r=0}x(2r)W^{kr}_{N/2}+W^k_{N}\sum^{N/2-1}_{r=0}x(2r+1)W^{kr}_{N/2}}"/>
+</p>
+
+Observe the elements crossing half window size
+
+<p align="center">
+<img src="https://latex.codecogs.com/svg.latex?{X(k+N/2)=\sum^{N/2-1}_{r=0}x(2r)W^{kr}_{N/2}-W^k_{N}\sum^{N/2-1}_{r=0}x(2r+1)W^{kr}_{N/2}}"/>
+</p>
+
+
+
+
