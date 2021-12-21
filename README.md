@@ -87,6 +87,9 @@ Observe the elements crossing half window size
 <img src="https://latex.codecogs.com/svg.latex?{X(k+N/2)=\sum^{N/2-1}_{r=0}x(2r)W^{kr}_{N/2}-W^k_{N}\sum^{N/2-1}_{r=0}x(2r+1)W^{kr}_{N/2}}"/>
 </p>
 
+Observe K+1-th term 
 
 
-
+<p align="center">
+<img src="https://latex.codecogs.com/svg.latex?{X(k+1)=\sum^{N/2-1}_{r=0}x(2r)W^{(k+1)r}_{N/2}+W^{(k+1)}_{N}\sum^{N/2-1}_{r=0}x(2r+1)W^{(k+1)r}_{N/2}}"/>
+</p>
