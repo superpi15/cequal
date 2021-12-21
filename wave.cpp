@@ -6,15 +6,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "cequal.h"
-
 #include <fstream>
+#include "cequal.h"
 
 int main(int argc, char **argv) {
 	if( argc < 2 ){
 		printf("Usage: ./program <*.WAV>\n");
 		return 0;
 	}
+//	ceq::Oal_Man_t oal;
+//	oal.init();
+//	oal.finalize();
+//	return 0;
 	ceq::Ceq_Man_t ceq(argv[1]);
 	ceq::print_wav_header(ceq.header);
 

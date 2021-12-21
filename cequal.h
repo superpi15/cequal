@@ -11,6 +11,9 @@
 #include <assert.h>
 #include "math.h"
 
+
+#include "cequal_al.h"
+
 namespace ceq {
 #include "wave.h"
 #define CEQUAL_PI 3.1415926 
@@ -34,16 +37,24 @@ inline Cpx_t operator-(const Cpx_t& n1, const Cpx_t& n2){
 }
 
 class Ceq_Man_t {
+	bool al_play;
 public:
 	std::string filename;
 	WavHeader_t header;
 	int nBand;
 	Ceq_Man_t(char * nfilename){
-		memset(this,0,sizeof(Ceq_Man_t));
+		//memset(this,0,sizeof(Ceq_Man_t));
 		setDefault();
 		filename = nfilename;
 		read_wav_header(nfilename,header,0);
+		if( al_play )
+			oal.init();
 	}
+	~Ceq_Man_t(){
+		if( al_play )
+			oal.finalize();
+	}
+	Oal_Man_t oal;
 	void setDefault();
 	void dumpSample();
 	void writeHeader( std::ostream& ostr );
@@ -58,6 +69,7 @@ public:
 };
 
 inline void Ceq_Man_t::setDefault(){
+	al_play = true;
 	vDFTW.resize(20);
 	for(int i = 0; i < vDFTW.size(); i ++){
 		double angular_unit = 2*CEQUAL_PI / (1<<i);
@@ -132,6 +144,13 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	std::vector< std::vector<double> > vData, vDataOut;
 
 
+	int al_top = 0, al_buf_size = 22050;
+	void * al_buf = NULL;
+	if( this->al_play ){
+		al_buf = malloc( al_buf_size * bytes_per_sample );
+	}
+
+
 	int half_window_size = this->window_size/2;
 
 	int max_freq = header.sample_rate / 2; // The smallest wave crest and through are matched a input sample
@@ -176,7 +195,38 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		}
 	}
 
+
+
+
+	if( this->al_play ){
+		ALenum al_format;
+		if( header.channels == 1 ){
+			if( 8 == header.bits_per_channel )
+				al_format = AL_FORMAT_MONO8;
+			else
+			if( 16 == header.bits_per_channel )
+				al_format = AL_FORMAT_MONO16;
+			else {
+				assert(false);
+			}
+		} else
+		if( header.channels == 2 ){
+			if( 8 == header.bits_per_channel )
+				al_format = AL_FORMAT_STEREO8;
+			else
+			if( 16 == header.bits_per_channel )
+				al_format = AL_FORMAT_STEREO16;
+			else {
+				assert(false);
+			}
+		} else
+			assert(false);
+		oal.init_extern_queue( header.sample_rate/4, al_format, header.sample_rate );
+		oal.play();
+	}
+
 	for(int i = 0; i < num_samples; i ++){
+		unsigned int odata_tmp = 0;
 		for(int j = 0; j < header.channels; j ++){
 			std::vector<double> vDataTmp;
 			vDataTmp.resize(size_of_window);
@@ -189,12 +239,25 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 			double real = 0;
 			for(int k = 0; k < size_of_window; k ++) // k-th freq 
 				real += vCpx[k].real * vInvCos[k] - vCpx[k].img * vInvSin[k];
-			vDataOut[j][i] = real/size_of_window;
+			//vDataOut[j][i] = real/size_of_window;
+
+			int channel_data_out = real/size_of_window;
+			for(int k = 0; k < bytes_per_channel; k ++ )
+				data_buffer[ j*bytes_per_channel + k ] = (channel_data_out >> (8*k)) & 0x00ff;
+			//if(postr && fPlot) (*postr) << channel_data_out << " ";
+
+			if( this->al_play ){
+				for(int k = 0; k < bytes_per_channel; k ++ )
+					oal.push_byte(data_buffer[ j*bytes_per_channel + k ]);
+			}
 		}
+		if(postr && fPlot) (*postr) << "\n";
+		if(postr && !fPlot) postr->write( data_buffer, bytes_per_sample );
 	}
+	oal.wait();
 
 	//vDataOut = vData;
-
+/**
 	for(int i = 0; i < num_samples; i ++){
 		for(int j = 0; j < header.channels; j ++){
 			int channel_data_out = vDataOut[j][i];
@@ -204,9 +267,11 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		}
 		if(postr && fPlot) (*postr) << "\n";
 		if(postr && !fPlot) postr->write( data_buffer, bytes_per_sample );
-	}
+	}/**/
 
 FINALIZE:
+	if( al_buf )
+		free(al_buf);
 	free(data_buffer);
 	fclose(fptr);
 }

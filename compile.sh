@@ -1,1 +1,1 @@
-g++ -O3 -o cequal wave.cpp -fopenmp 
+g++ -g -O3 -o cequal wave.cpp -fopenmp -lopenal
