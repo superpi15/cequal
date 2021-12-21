@@ -59,7 +59,8 @@ Shown above indicates that band frequency can be first converted into angular fr
 to reduce computation overhead. 
 
 
-###FFT 
+### FFT 
+
 Define 
 ![](https://latex.codecogs.com/svg.latex?{W_N=e^{-j(2\pi/N)}}), DFT has the form 
 
