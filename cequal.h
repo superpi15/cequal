@@ -9,55 +9,11 @@
 #include <iostream>
 #include <vector>
 #include <assert.h>
-#include "wave.h"
 #include "math.h"
 
+namespace ceq {
+#include "wave.h"
 #define CEQUAL_PI 3.1415926 
-
-class Ceq_Man_t {
-public:
-	std::string filename;
-	WavHeader_t header;
-	int nBand;
-	Ceq_Man_t(char * nfilename){
-		memset(this,0,sizeof(Ceq_Man_t));
-		setDefault();
-		filename = nfilename;
-		read_wav_header(nfilename,header,0);
-	}
-	void setDefault();
-	void dumpSample();
-	void writeHeader( std::ostream& ostr );
-
-	double time_stamp;                // keep progress for dynamic adjustment 
-	std::vector<double> vBandGain;    // gain of each band 
-	std::vector<double> vBandOmega;   // angular frequency of a band 
-	std::vector<double> vWindow;
-
-	void runFilter(std::ostream * postr=NULL, int fPlot=0);
-	void run_prefetch_filter(std::ostream * postr=NULL, int fPlot=0);
-	void run_prefetch_fft(std::ostream * postr=NULL, int fPlot=0);
-	int window_size;
-};
-
-inline void Ceq_Man_t::setDefault(){
-	nBand = 11;
-	window_size = nBand;
-	int max_freq = 44100;
-	vWindow.resize(window_size);
-	vBandGain .resize(nBand,(double)1.0f/nBand);
-	//vBandGain .resize(nBand,(double)1.0f/log2(nBand));
-	//vBandGain .resize(nBand,1.0f);
-	vBandOmega.resize(nBand);
-	double step = (double) 44100 / nBand;
-	for(int i = 0; i < nBand; i ++){
-		//vBandOmega[i] = (32<<i) * 2 * CEQUAL_PI;
-		vBandOmega[i] = (step*(i+0.5)) * 2.0f * CEQUAL_PI;
-	}
-	for(int i = 0; i < window_size; i ++){
-		vWindow[i] = 0.5 - 0.5 * cos( (double) 2 * CEQUAL_PI * (i+0.5) / window_size );
-	}
-}
 
 class Cpx_t {
 public:
@@ -76,7 +32,43 @@ inline Cpx_t operator+(const Cpx_t& n1, const Cpx_t& n2){
 inline Cpx_t operator-(const Cpx_t& n1, const Cpx_t& n2){
 	return Cpx_t( n1.real - n2.real, n1.img - n2.img );
 }
-inline void run_fft(const std::vector<double>& vDataIn, std::vector<double>& vDataOut){
+
+class Ceq_Man_t {
+public:
+	std::string filename;
+	WavHeader_t header;
+	int nBand;
+	Ceq_Man_t(char * nfilename){
+		memset(this,0,sizeof(Ceq_Man_t));
+		setDefault();
+		filename = nfilename;
+		read_wav_header(nfilename,header,0);
+	}
+	void setDefault();
+	void dumpSample();
+	void writeHeader( std::ostream& ostr );
+
+	double time_stamp;                // keep progress for dynamic adjustment 
+	std::vector<Cpx_t> vDFTW;         // DFT weight
+
+	void runFilter(std::ostream * postr=NULL, int fPlot=0);
+	void run_prefetch_filter(std::ostream * postr=NULL, int fPlot=0, const bool fft=true);
+	void run_fft(const std::vector<double>& vDataIn, std::vector<Cpx_t> * pvCpx=NULL);
+	int window_size;
+};
+
+inline void Ceq_Man_t::setDefault(){
+	vDFTW.resize(20);
+	for(int i = 0; i < vDFTW.size(); i ++){
+		double angular_unit = 2*CEQUAL_PI / (1<<i);
+		vDFTW[i] = Cpx_t(cos(angular_unit), sin(angular_unit));
+	}
+	nBand = 11;
+	window_size = nBand;
+	int max_freq = 44100;
+}
+
+inline void Ceq_Man_t::run_fft(const std::vector<double>& vDataIn, std::vector<Cpx_t> * pvCpx){
 	std::vector<Cpx_t> vCpxIn, vResult;
 	int size_of_window = vDataIn.size();
 	
@@ -93,37 +85,35 @@ inline void run_fft(const std::vector<double>& vDataIn, std::vector<double>& vDa
 		vCpxIn[ i + half_window_size + 1 ] = Cpx_t( vDataIn[i + 1 + half_window_size ], 0 );
 	}
 
-	//std::vector<std::vector<double> > vSin, vCos;
 
 	int ffstep, fflevel;
-	for(ffstep = 2, fflevel = 1; ffstep <= size_of_window; ffstep <<= 1, fflevel <<=1 ){
-		double angular_unit = CEQUAL_PI / (ffstep>>1);
-		Cpx_t w = Cpx_t(sin(angular_unit), cos(angular_unit));
-		//#pragma omp parallel for num_threads(8)
+	for(ffstep = 2, fflevel = 1; ffstep <= size_of_window; ffstep <<= 1, fflevel ++ ){
+		//printf("%4d %4d %7.4f %7.4f \n", ffstep, fflevel, vDFTW[fflevel].real, vDFTW[fflevel].img);
 		for(int i = 0; i < size_of_window; i += ffstep ){ // iterate groups of nodes on current layer 
+			Cpx_t w(1,0);
 			for(int j = 0; j < ffstep; j ++){             // iterate nodes in a window  
-				int idx0 = i+j;
-				int idx1 = i+(j+(ffstep>>1))%ffstep;
-				if( idx0 > idx1 ) std::swap( idx0, idx1 );
-				vResult[i+j] = vCpxIn[idx0] + Cpx_t(j<(ffstep>>1)? 1.0f: -1.0f, 0 ) * vCpxIn[idx1] * w;
+				int idx0, idx1;
+				if( j < (ffstep>>1) )
+					idx0 = i+j, idx1 = i+j+(ffstep>>1);
+				else
+					idx1 = i+j, idx0 = i+j-(ffstep>>1);
+				vResult[i+j] = vCpxIn[idx0] + vCpxIn[idx1] * w;
+				w = w * vDFTW[fflevel];
+				//w = vDFTW[fflevel];
 			}
 		}
 		vCpxIn.swap(vResult);
-	//	if(fflevel==2)
-	//	break;
+	//	if(fflevel==2)\
+		break;
 	}
 	//exit(0);
 
-	if( vDataIn.size() < size_of_window )
-		vDataOut.resize( size_of_window );
-//	for(int i = 0; i < size_of_window; i ++)
-//		vDataOut[i] = vCpxIn[size_of_window-1-i].real;
-	for(int i = 0; i < size_of_window; i ++)
-		vDataOut[i] = vCpxIn[i].real;
+	if(pvCpx)
+		pvCpx->swap(vCpxIn);
 }
 
 
-inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
+inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, const bool fft){
 	FILE * fptr = fopen(filename.c_str(),"r");
 	if( !fptr ){
 		printf("Cannot open \'%s\'\n", filename.c_str());
@@ -142,13 +132,6 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 	std::vector< std::vector<double> > vData, vDataOut;
 
 
-	vData.resize( header.channels );
-	vDataOut.resize( header.channels );
-	for(int i = 0; i < header.channels; i ++){
-		vData   [i].resize( num_samples + this->window_size, 0.0f );
-		vDataOut[i].resize( num_samples, 0.0f );
-	}
-
 	int half_window_size = this->window_size/2;
 
 	std::vector< std::vector<double> > vFMatrixSin, vFMatrixCos, vFMatrixSinInv, vFMatrixCosInv;
@@ -163,6 +146,14 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 	printf("window size %6d\n", size_of_window);
 	printf("min freq    %7.3f\n", min_freq);
 	printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+
+
+	vData.resize( header.channels );
+	vDataOut.resize( header.channels );
+	for(int i = 0; i < header.channels; i ++){
+		vData   [i].resize( num_samples + size_of_window, 0.0f );
+		vDataOut[i].resize( num_samples, 0.0f );
+	}
 	vFMatrixSin.resize(size_of_window);
 	vFMatrixCos.resize(size_of_window);
 	vFMatrixSinInv.resize(size_of_window);
@@ -207,45 +198,44 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot){
 		}
 	}
 
-
 	for(int i = 0; i < num_samples; i ++){
 		for(int j = 0; j < header.channels; j ++){
 
-			// DFT 
-//			#pragma omp parallel for num_threads(8)
-//			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-//				//double img = 0;
-//				double real = 0;
-//				for(int l = 0; l < size_of_window; l ++){
-//					//img  += (double) vData[j][l+i] * vFMatrixSin[k][l];// * vWindow[k];
-//					real += (double) vData[j][l+i] * vFMatrixCos[k][l];// * vWindow[k];
-//				}
-//				//vImg [k] = img;
-//				vReal[k] = real;
-//			}
+			if(fft){
+				std::vector<double> vDataTmp;
+				vDataTmp.resize(size_of_window);
+				for(int l = 0; l < size_of_window; l ++){
+					vDataTmp[l] = vData[j][l+i];
+				}
+				std::vector<Cpx_t> vCpx;
+				run_fft(vDataTmp, &vCpx);
 
-			std::vector<double> vDataTmp;
-			vDataTmp.resize(size_of_window);
-			for(int l = 0; l < size_of_window; l ++){
-				vDataTmp[l] = vData[j][l+i];
+				double real = 0;
+				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+					real += vCpx[k].real * vFMatrixCosInv[k][half_window_size]
+					 	- vCpx[k].img * vFMatrixSinInv[k][half_window_size];
+				}
+				vDataOut[j][i] = real/size_of_window;
+			} else {
+				#pragma omp parallel for num_threads(8)
+				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+					//double img = 0;
+					double real = 0;
+					for(int l = 0; l < size_of_window; l ++){
+						//img  += (double) vData[j][l+i] * vFMatrixSin[k][l];
+						real += (double) vData[j][l+i] * vFMatrixCos[k][l];
+					}
+					//vImg [k] = img;
+					vReal[k] = real;
+				}
+
+				double real = 0;
+				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
+					real += vReal[k] * vFMatrixCosInv[k][half_window_size];// - vImg[k] * vFMatrixSinInv[k][l];
+				}
+				vDataOut[j][i] = real/size_of_window;
 			}
-			run_fft(vDataTmp, vReal);
 
-/* only used for smooth by window overlapping */
-//			#pragma omp parallel for num_threads(4)
-//			for(int l = 0; l < size_of_window; l ++){
-//				double real = 0;
-//				for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-//					real += vReal[k] * vFMatrixCosInv[k][l];// - vImg[k] * vFMatrixSinInv[k][l];
-//				}
-//				vDataOut[j][i] = real/size_of_window;
-//			}
-
-			double real = 0;
-			for(int k = 0; k < size_of_window; k ++){ // k-th freq 
-				real += vReal[k] * vFMatrixCosInv[k][half_window_size];// - vImg[k] * vFMatrixSinInv[k][l];
-			}
-			vDataOut[j][i] = 1.4*real/size_of_window;
 		}
 	}
 
@@ -295,5 +285,5 @@ inline void Ceq_Man_t::writeHeader( std::ostream& ostr ){
 	//41-44
 	for(i = 0; i < 4; i ++, j++) ostr << (unsigned char)( (header.data_size >> i*8) & 0xff );
 }
-
+}
 #endif

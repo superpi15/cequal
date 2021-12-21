@@ -15,8 +15,8 @@ int main(int argc, char **argv) {
 		printf("Usage: ./program <*.WAV>\n");
 		return 0;
 	}
-	Ceq_Man_t ceq(argv[1]);
-	print_wav_header(ceq.header);
+	ceq::Ceq_Man_t ceq(argv[1]);
+	ceq::print_wav_header(ceq.header);
 
 	std::ofstream ostr1("tmp.wav");\
 	ceq.run_prefetch_filter(&ostr1);\
