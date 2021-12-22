@@ -51,6 +51,7 @@ public:
 	std::string device_name;
 	ALuint stream_out;
 	bool init();
+	void flush();
 	void finalize();
 
 	void check_error(const char * str=""){
@@ -73,13 +74,19 @@ public:
 	void init_extern_queue( int extern_buf_size, ALenum al_format, ALsizei sample_rate );
 	void push_byte( unsigned char sample );
 	unsigned char * ext_buf;
+private:
+	void push_al_buffer();
 };
 
-inline void Oal_Man_t::push_byte( unsigned char sample ){
-	ext_buf[ext_buf_top++] = sample;
+inline void Oal_Man_t::flush(){
+	if( 0!=ext_buf_top ){
+		memset(ext_buf+ext_buf_top,0, ext_buf_size * ext_buf_unit_size -ext_buf_top);
+		push_al_buffer();
+	}
+}
 
-	if( ext_buf_top >= ext_buf_size * ext_buf_unit_size ){
-		ALuint bid;
+inline void Oal_Man_t::push_al_buffer(){
+	ALuint bid;
 //printf("enter\n");
 //		ALenum current_playing_state;
 //	alGetSourcei(stream_out, AL_SOURCE_STATE, & current_playing_state);
@@ -90,21 +97,21 @@ inline void Oal_Man_t::push_byte( unsigned char sample ){
 //	    	printf("not playing \n");
 //	    }
 
-	    ALenum al_error;
-	    do {
-	    	alSourceUnqueueBuffers(stream_out, 1, &bid);
-	    } while( AL_NO_ERROR != (al_error = alGetError()) );
-		
-		check_error("1 unqueue");
+    ALenum al_error;
+    do {
+    	alSourceUnqueueBuffers(stream_out, 1, &bid);
+    } while( AL_NO_ERROR != (al_error = alGetError()) );
+	
+	check_error("1 unqueue");
 
-		alBufferData( bid, format, ext_buf, ext_buf_size * ext_buf_unit_size, sample_rate);
-		//int dummy=0;\
-		alBufferData( bid, format, &dummy, 2, this->sample_rate);
+	alBufferData( bid, format, ext_buf, ext_buf_size * ext_buf_unit_size, sample_rate);
+	//int dummy=0;\
+	alBufferData( bid, format, &dummy, 2, this->sample_rate);
 
-		check_error("2 push");
-		alSourceQueueBuffers(stream_out, 1, &bid);
-		check_error("3 enqueue");
-	    
+	check_error("2 push");
+	alSourceQueueBuffers(stream_out, 1, &bid);
+	check_error("3 enqueue");
+    
 //	    alGetSourcei(stream_out, AL_SOURCE_STATE, & current_playing_state);
 //	    check_error("alGetSourcei AL_SOURCE_STATE");
 //	    if(AL_PLAYING == current_playing_state)
@@ -113,10 +120,20 @@ inline void Oal_Man_t::push_byte( unsigned char sample ){
 //	    	play();
 //	    }
 //	    printf("done\n");
-		ext_buf_top = 0;
-		al_push_num++;
-	}
+
+	al_push_num++;
+	
 	check_error();
+}
+
+inline void Oal_Man_t::push_byte( unsigned char sample ){
+	ext_buf[ext_buf_top++] = sample;
+
+	if( ext_buf_top >= ext_buf_size * ext_buf_unit_size ){
+		ALuint bid;
+		push_al_buffer();
+		ext_buf_top = 0;
+	}
 }
 
 inline void Oal_Man_t::init_extern_queue( int extern_buf_size, ALenum al_format, int nsample_rate ){

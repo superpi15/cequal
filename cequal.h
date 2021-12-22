@@ -11,6 +11,7 @@
 #include <assert.h>
 #include "math.h"
 
+#include <curses.h>
 
 #include "cequal_al.h"
 
@@ -39,6 +40,7 @@ inline Cpx_t operator-(const Cpx_t& n1, const Cpx_t& n2){
 
 class Ceq_Man_t {
 	bool al_play;
+	bool nl_play;
 	int cpx_mult;
 public:
 	std::string filename;
@@ -69,6 +71,7 @@ public:
 
 inline void Ceq_Man_t::setDefault(){
 	al_play = true;
+	nl_play = true;
 	cpx_mult = 1;
 	vDFTW.resize(20);
 	for(int i = 0; i < vDFTW.size(); i ++){
@@ -145,28 +148,46 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	std::vector< std::vector<Cpx_t::data_t> > vData, vDataOut;
 
 
-	int al_top = 0, al_buf_size = 22050;
+	int al_top = 0, al_buf_size = 11050;
 	void * al_buf = NULL;
 	if( this->al_play ){
 		al_buf = malloc( al_buf_size * bytes_per_sample );
 	}
 
 
+	int nl_char = -1;
+	if( this->nl_play ){
+		// http://www.cplusplus.com/forum/beginner/248599/
+		initscr();
+		clear();
+  		noecho();
+	}
+
+
 	int half_window_size = this->window_size/2;
 
 	int max_freq = header.sample_rate / 2; // The smallest wave crest and through are matched a input sample
-	int size_of_window = 512;
+	int size_of_window = 1024;
 	double min_freq = (double) max_freq / (size_of_window / 2);
 	double angular_unit = 2 * CEQUAL_PI / size_of_window;
-	
+
 	std::vector< std::vector<Cpx_t::data_t> > vDataTmpCh(header.channels);
 	for(int j = 0; j < header.channels; j ++)
 		vDataTmpCh[j].resize(size_of_window);
 
-	printf("max freq    %6d\n", max_freq);
-	printf("window size %6d\n", size_of_window);
-	printf("min freq    %7.3f\n", min_freq);
-	printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+	if( !this->nl_play ){
+		printf("max freq    %6d\n", max_freq);
+		printf("window size %6d\n", size_of_window);
+		printf("min freq    %7.3f\n", min_freq);
+		printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+	} else {
+		mvprintw(1,1,"max freq    %6d\n", max_freq);
+		mvprintw(2,1,"window size %6d\n", size_of_window);
+		mvprintw(3,1,"min freq    %7.3f\n", min_freq);
+		mvprintw(4,1,"step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+		refresh();
+	}
+	
 
 
 	vData.resize( header.channels );
@@ -235,6 +256,10 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	}
 
 	for(int i = 0; i < num_samples; i ++){
+		if( this->nl_play ){
+			timeout(0);
+			nl_char = getch();
+		}
 
 		#pragma omp parallel for num_threads (2) if(1<header.channels)
 		for(int j = 0; j < header.channels; j ++){
@@ -264,7 +289,22 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		}
 		if(postr && fPlot) (*postr) << "\n";
 		if(postr && !fPlot) postr->write( data_buffer, bytes_per_sample );
+
+		if( this->nl_play && -1 != nl_char ){
+			
+			if( 'q' == nl_char ){
+				mvprintw(5,1,"received terminating sequence (flushing buffer) ");
+				refresh();
+				break;
+			} else {
+				mvprintw(5,1,"last input: %c", nl_char);
+				refresh();
+			}
+			
+			nl_char = -1;
+		}
 	}
+	oal.flush();
 	oal.wait();
 
 	//vDataOut = vData;
@@ -284,6 +324,10 @@ FINALIZE:
 	if( al_play ){
 		oal.finalize();
 		free(al_buf);
+	}
+
+	if( this->nl_play ){
+		endwin();
 	}
 	free(data_buffer);
 	fclose(fptr);
