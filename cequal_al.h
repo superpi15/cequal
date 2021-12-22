@@ -25,7 +25,7 @@ namespace ceq {
 
 
 class Oal_Man_t {
-	int ext_buf_top, ext_buf_size, ext_buf_unit_size;
+	int ext_buf_top, sample_per_buf, byte_per_sample;
 	int sample_rate;
 	int al_push_num;
 	ALenum format;
@@ -35,15 +35,19 @@ public:
 		output_context  = NULL;
 		al_push_num     = 0;
 		sample_rate     = 0;
+		init_buf_top    = 0;
 		nbuffer = 4;
-		ext_buf_size = 22050;
+		sample_per_buf = 22050;
 		ext_buf = NULL;
-		buffer_list = (ALuint*) malloc(sizeof(ALuint)&nbuffer);
+		buffer_list = NULL;
 	}
 	~Oal_Man_t(){
-		free(buffer_list);
+		if( buffer_list )
+			free(buffer_list);
 	}
-	int nbuffer;
+	int nbuffer, init_buf_top;
+	int num_al_push() const { return al_push_num; }
+	int num_al_buffer() const { return nbuffer; }
 	ALCdevice  * output_device;
 	ALCcontext * output_context;
 	//ALuint internal_buffer;
@@ -80,13 +84,14 @@ private:
 
 inline void Oal_Man_t::flush(){
 	if( 0!=ext_buf_top ){
-		memset(ext_buf+ext_buf_top,0, ext_buf_size * ext_buf_unit_size -ext_buf_top);
+		memset(ext_buf+ext_buf_top,0, sample_per_buf * byte_per_sample -ext_buf_top);
 		push_al_buffer();
 	}
 }
 
 inline void Oal_Man_t::push_al_buffer(){
 	ALuint bid;
+	ALenum current_playing_state;
 //printf("enter\n");
 //		ALenum current_playing_state;
 //	alGetSourcei(stream_out, AL_SOURCE_STATE, & current_playing_state);
@@ -98,13 +103,16 @@ inline void Oal_Man_t::push_al_buffer(){
 //	    }
 
     ALenum al_error;
-    do {
-    	alSourceUnqueueBuffers(stream_out, 1, &bid);
-    } while( AL_NO_ERROR != (al_error = alGetError()) );
+    if( init_buf_top < nbuffer ){
+    	bid = buffer_list[init_buf_top++];
+    } else 
+	    do {
+	    	alSourceUnqueueBuffers(stream_out, 1, &bid);
+	    } while( AL_NO_ERROR != (al_error = alGetError()) );
 	
 	check_error("1 unqueue");
 
-	alBufferData( bid, format, ext_buf, ext_buf_size * ext_buf_unit_size, sample_rate);
+	alBufferData( bid, format, ext_buf, sample_per_buf * byte_per_sample, sample_rate);
 	//int dummy=0;\
 	alBufferData( bid, format, &dummy, 2, this->sample_rate);
 
@@ -112,14 +120,14 @@ inline void Oal_Man_t::push_al_buffer(){
 	alSourceQueueBuffers(stream_out, 1, &bid);
 	check_error("3 enqueue");
     
-//	    alGetSourcei(stream_out, AL_SOURCE_STATE, & current_playing_state);
-//	    check_error("alGetSourcei AL_SOURCE_STATE");
-//	    if(AL_PLAYING == current_playing_state)
-//	    	printf("playing \n");
-//	    else {
-//	    	play();
-//	    }
-//	    printf("done\n");
+    alGetSourcei(stream_out, AL_SOURCE_STATE, & current_playing_state);
+    check_error("alGetSourcei AL_SOURCE_STATE");
+    if(AL_PLAYING == current_playing_state)
+    	;//printf("playing \n");
+    else {
+    	play();
+    }
+    //printf("done\n");
 
 	al_push_num++;
 	
@@ -129,7 +137,7 @@ inline void Oal_Man_t::push_al_buffer(){
 inline void Oal_Man_t::push_byte( unsigned char sample ){
 	ext_buf[ext_buf_top++] = sample;
 
-	if( ext_buf_top >= ext_buf_size * ext_buf_unit_size ){
+	if( ext_buf_top >= sample_per_buf * byte_per_sample ){
 		ALuint bid;
 		push_al_buffer();
 		ext_buf_top = 0;
@@ -137,7 +145,7 @@ inline void Oal_Man_t::push_byte( unsigned char sample ){
 }
 
 inline void Oal_Man_t::init_extern_queue( int extern_buf_size, ALenum al_format, int nsample_rate ){
-	ext_buf_size = extern_buf_size;
+	sample_per_buf = extern_buf_size;
 	ext_buf_top = 0;
 	sample_rate = nsample_rate;
 	format = al_format;
@@ -145,25 +153,24 @@ inline void Oal_Man_t::init_extern_queue( int extern_buf_size, ALenum al_format,
 		free(ext_buf);
 
 	if( AL_FORMAT_MONO8 == format )
-		ext_buf_unit_size = 1;
+		byte_per_sample = 1;
 	else
 	if( AL_FORMAT_STEREO8 == format || AL_FORMAT_MONO16 == format)
-		ext_buf_unit_size = 2;
+		byte_per_sample = 2;
 	else
 	if( AL_FORMAT_STEREO16 == format )
-		ext_buf_unit_size = 4;
+		byte_per_sample = 4;
 	else {
 		assert(false);
 	}
 	al_push_num = 0;
-	ext_buf = (unsigned char*)malloc(ext_buf_size * ext_buf_unit_size);
-	memset(ext_buf,0,sizeof(char)*ext_buf_size * ext_buf_unit_size);
+	ext_buf = (unsigned char*)malloc(sample_per_buf * byte_per_sample);
+	memset(ext_buf,0,sizeof(char)*sample_per_buf * byte_per_sample);
 
-
-	for(int i = 0; i < nbuffer; i ++)
-		alBufferData( buffer_list[i], al_format, ext_buf, ext_buf_size * ext_buf_unit_size, nsample_rate);
-	alSourceQueueBuffers(stream_out, nbuffer, buffer_list);
-	play();
+//	for(int i = 0; i < nbuffer; i ++)
+//		alBufferData( buffer_list[i], al_format, ext_buf, sample_per_buf * byte_per_sample, nsample_rate);
+//	alSourceQueueBuffers(stream_out, nbuffer, buffer_list);
+//	play();
 }
 
 inline bool Oal_Man_t::init(){
@@ -178,6 +185,8 @@ inline bool Oal_Man_t::init(){
 	output_device  = alcOpenDevice(devname);
 	output_context = alcCreateContext(output_device, NULL);
 	alcMakeContextCurrent(output_context);
+
+	buffer_list = (ALuint*) malloc(sizeof(ALuint)*nbuffer);
 	alGenBuffers(nbuffer, buffer_list);
 	check_error("get buffer");
 	alGenSources(1, &stream_out);
