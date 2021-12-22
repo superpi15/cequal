@@ -208,7 +208,6 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(41-44) Size of data chunk: %u \n", header.data_size);
 
-
 	// calculate no.of samples
 	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
 	if( fVerbose )

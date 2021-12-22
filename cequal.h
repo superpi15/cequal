@@ -9,12 +9,13 @@
 #include <iostream>
 #include <vector>
 #include <assert.h>
+#include <algorithm>
 #include "math.h"
 
 #include <thread>
 #include <mutex>
 
-#include <curses.h>
+#include <ncurses.h>
 
 #include "cequal_al.h"
 
@@ -62,12 +63,15 @@ public:
 	Oal_Man_t oal;
 	void setDefault();
 	void dumpSample();
+	void scanSample();
 	void writeHeader( std::ostream& ostr );
 
 	double time_stamp;                // keep progress for dynamic adjustment 
 	std::vector<Cpx_t> vDFTW;         // DFT weight
 	std::vector<int> vBandFreq;
-	std::vector<double> vBandVol;
+	std::vector<double> vBandVol, vBandGain, vBandGainMul;
+	std::vector<int> vFreq2Band;
+	double totalVolumn, totalVolumnMul;
 	void config_al_play(bool flag){ al_play = flag;}
 	void config_nl_play(bool flag){ nl_play = flag;}
 
@@ -84,7 +88,58 @@ private:
 
 	int base_band_power;
 	int volumn_scale;
+	int nl_band_focus;
 };
+
+
+// fllr: https://stackoverflow.com/questions/63614171/avaudiorecorder-generates-strange-wav-filewrong-header
+inline void Ceq_Man_t::scanSample(){
+	FILE * fptr = fopen(filename.c_str(),"r");
+	if( !fptr ){
+		printf("Cannot open \'%s\'\n", filename.c_str());
+		return;
+	}
+	if( fseek(fptr, 44, SEEK_SET) ){
+		printf("Invalid header of \'%s\'\n", filename.c_str());
+		return;
+	}
+	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
+	long bytes_per_sample = (header.channels * header.bits_per_channel) / 8;
+	long bytes_per_channel = (bytes_per_sample / header.channels);
+	char * data_buffer = (char*) malloc(bytes_per_sample);
+
+	//if(postr && !fPlot) writeHeader(*postr);
+
+	int nRead = 1;
+	while(fread(data_buffer,4,1,fptr)){
+		printf("%3d %c%c%c%c \n", nRead, data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+		if( data_buffer[0]=='d' && data_buffer[1]=='a' && data_buffer[2]=='t' && data_buffer[3]=='a' ){
+			fread(data_buffer,4,1,fptr);
+			int data_size = *((int*)data_buffer);
+			printf("size = %d bytes\n", data_size);
+			fseek(fptr, data_size, SEEK_CUR);
+		}
+		nRead += 4;
+		if(nRead >= header.data_size+50) break;
+	}
+//	for(int i = 0; i < num_samples; i ++){
+//		if(!fread(data_buffer,bytes_per_sample,1,fptr)){
+//			printf("Data loading mismatch\n");
+//			goto FINALIZE;
+//		}
+//		printf("%c%c%c%c\n", data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+//		for(int j = 0; j < header.channels; j ++){
+//			int channel_data_in = 0;
+//			for(int k = 0; k < bytes_per_channel; k ++ )
+//				channel_data_in |= (data_buffer[ j*bytes_per_channel + k ]&(k==bytes_per_channel-1? ~0: 0x00ff)) << (8*k);
+//			if( 1 == bytes_per_channel )
+//				channel_data_in -= 128;
+//		}
+//	}
+FINALIZE:
+	free(data_buffer);
+	fclose(fptr);
+}
 
 inline void Ceq_Man_t::compute_band_vol( std::vector<std::vector<Cpx_t> > * pvFreqCh, int vol_buf_index, int band_step, int min_freq, int size_of_window ){
 	while(!vol_mutex.try_lock())
@@ -100,15 +155,18 @@ inline void Ceq_Man_t::compute_band_vol( std::vector<std::vector<Cpx_t> > * pvFr
 		int ffband_num = 0;
 		std::vector<Cpx_t>& vFreq = vFreqCh[ch];
 		for(int i = 0; i < vFreq.size(); i ++, ffband_num ++ ){
-			if( bid < vBandFreq.size() && vBandFreq[i] < min_freq + band_step * i ){
+			if( bid != vFreq2Band[i] ){
 				if( ffband_num )
 					vBandVolTmp[bid] += accu_vol / ffband_num;
-				bid ++ ;
+				bid = vFreq2Band[i];
 				accu_vol = 0;
 				ffband_num = 0;
 			}
 			//assert(vFreq[i].real<(1<<16));
-			accu_vol += (double) sqrt((vFreq[i] * Cpx_t( vFreq[i].real, - vFreq[i].img )).real)/size_of_window;
+			accu_vol += (double) 
+				//vFreq[i].real / size_of_window
+				sqrt((vFreq[i] * Cpx_t( vFreq[i].real, - vFreq[i].img )).real)/size_of_window
+				;
 		}
 	}
 //
@@ -136,15 +194,21 @@ inline void Ceq_Man_t::compute_band_vol( std::vector<std::vector<Cpx_t> > * pvFr
 }
 
 inline void Ceq_Man_t::vol_update_panel( int vol_buf_index, int size_of_window ){
+	int dy = 6, dx = 3;
 	while(!vol_panel_mutex.try_lock())
 		;
-	for(int i = 0; i < vBandVolBuf[vol_buf_index].size(); i ++){
+
+	for(int i = 0; i < nBand; i ++){
 		int j;
 		double vol_ratio = vBandVolBuf[vol_buf_index][i] / size_of_window;
 		int vol_portion = volumn_scale * vol_ratio;
-		mvprintw(6+i,1,"%6.2f ", vol_ratio);
+
+		mvprintw(dy+nBand-i-1,dx,"%c", i == nl_band_focus? '*': ' ');
+		mvprintw(dy+nBand-i-1,dx+1," %6d %6.2f [", vBandFreq[i], vol_ratio);
 		for(j = 0; j < volumn_scale; j ++)
-			mvprintw(6+i,8+j,"%c", j<vol_portion? '|': ' ');
+			mvprintw(dy+nBand-i-1,dx+17+j,"%c", j<vol_portion? '|': ' ');
+
+		mvprintw(dy+nBand-i-1,dx+22+volumn_scale,"] x %6.4f x %6.4f ", vBandGain[i], totalVolumn);
 	}
 
 	vol_panel_mutex.unlock();
@@ -163,8 +227,11 @@ inline void Ceq_Man_t::setDefault(){
 	nBand = 10;
 	volumn_scale = 20;
 	base_band_power = 6;
-	int max_freq = 44100;
 	vBandFreq.resize(nBand);
+	vBandGain.resize(nBand,0);
+	vBandGainMul.resize(nBand,1.0f);
+	totalVolumn = 0;
+	totalVolumnMul = 1.0f;
 	vBandVol.resize(nBand,0);
 	for(int i = 0; i < nBand; i ++)
 		vBandFreq[i] = 1<<(i+base_band_power);
@@ -191,6 +258,8 @@ inline void Ceq_Man_t::run_fft(const std::vector<Cpx_t::data_t>& vDataIn, std::v
 	int ffstep, fflevel;
 	for(ffstep = 2, fflevel = 1; ffstep <= size_of_window; ffstep <<= 1, fflevel ++ ){
 		//printf("%4d %4d %7.4f %7.4f \n", ffstep, fflevel, vDFTW[fflevel].real, vDFTW[fflevel].img);
+		//#pragma omp parallel for num_threads (2) if(256<size_of_window)
+		//#pragma omp parallel for num_threads (2)
 		for(int i = 0; i < size_of_window; i += ffstep ){ // iterate groups of nodes on current layer 
 			Cpx_t w(1,0);
 			for(int j = 0; j < ffstep; j ++){             // iterate nodes in a window  
@@ -210,8 +279,13 @@ inline void Ceq_Man_t::run_fft(const std::vector<Cpx_t::data_t>& vDataIn, std::v
 	}
 	//exit(0);
 
-	if(pvCpx)
+	if(pvCpx){
+		for(int i = 0; i < vCpxIn.size(); i ++){
+			vCpxIn[i].real *= vBandGainMul[ vFreq2Band[i] ];
+			vCpxIn[i].img  *= vBandGainMul[ vFreq2Band[i] ];
+		}
 		pvCpx->swap(vCpxIn);
+	}
 }
 
 
@@ -228,9 +302,48 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	if(postr && !fPlot) writeHeader(*postr);
 
 	long bytes_per_sample = (header.channels * header.bits_per_channel) / 8;
-	long bytes_per_channel = (bytes_per_sample / header.channels);
-	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
 	char * data_buffer = (char*) malloc(bytes_per_sample);
+	long bytes_per_channel = (bytes_per_sample / header.channels);
+	int data_size = header.data_size;
+	if( header.data_chunk_header[0]=='L' ){
+//		if( fseek(fptr, header.data_size, SEEK_CUR) ){
+//			printf("Invalid header of \'%s\'\n", filename.c_str());
+//			return;
+//		}
+//
+//		printf("%c%c%c%c \n", data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+//		if( !fread(data_buffer, sizeof(data_buffer), 1, fptr) || data_buffer[0]!='d' || data_buffer[1]!='a' ){ // find data
+//			printf("Invalid header of \'%s\'. Cannot find data chunk\n", filename.c_str());
+//			free(data_buffer);
+//			return;
+//		}
+//		printf("%c%c%c%c \n", data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+////		if( !fread(data_buffer, 4, 1, fptr) ){
+////			printf("Invalid header of \'%s\'\n", filename.c_str());
+////			free(data_buffer);
+////			return;
+////		}
+//		fread(data_buffer, 4, 1, fptr);
+
+		int nRead = 1;
+		while(fread(data_buffer,4,1,fptr)){
+			printf("%3d %c%c%c%c \n", nRead, data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+			if( data_buffer[0]=='d' && data_buffer[1]=='a' && data_buffer[2]=='t' && data_buffer[3]=='a' ){
+				fread(data_buffer,4,1,fptr);
+				data_size = *((int*)data_buffer);
+				printf("size = %d bytes\n", data_size);
+				//fseek(fptr, data_size, SEEK_CUR);
+				break;
+			}
+			//nRead += 4;
+			//if(nRead >= header.data_size+50) break;
+		}
+		printf("%c%c%c%c \n", data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
+		data_size = *((int*) data_buffer);
+		printf("get data size = %ld\n", data_size);
+	}
+	long num_samples = (8 * data_size) / (header.channels * header.bits_per_channel);
+	
 	std::vector< std::vector<Cpx_t::data_t> > vData, vDataOut;
 
 
@@ -240,23 +353,25 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		al_buf = malloc( al_buf_size * bytes_per_sample );
 	}
 
-
-	int nl_char = -1;
-	if( this->nl_play ){
-		// http://www.cplusplus.com/forum/beginner/248599/
-		initscr();
-		clear();
-		curs_set(0);
-  		noecho();
-	}
-
+	long ubound, lbound;
+	if( 8 == header.bits_per_channel ){
+		ubound = 128, lbound = -127;
+	} else
+	if( 16 == header.bits_per_channel ){
+		ubound = 32768, lbound = -32767;
+	} else
+	if( 32 == header.bits_per_channel ){
+		ubound = 2147483648;
+		lbound = -2147483647;
+	} else
+		assert(false);
 
 	int size_of_window = 512;
 	int nl_update_per_sample = 2048;
 	int al_sample_per_batch  = header.sample_rate/24; // al ext buffer size
-	int max_freq = header.sample_rate / 2; // The smallest wave crest and through are matched a input sample
+	int max_freq = header.sample_rate; // The smallest wave crest and through are matched a input sample
 	int half_window_size = size_of_window/2;
-	double min_freq = (double) max_freq / (size_of_window / 2);
+	double min_freq = (double) max_freq / size_of_window;
 	double angular_unit = 2 * CEQUAL_PI / size_of_window;
 	int band_step = (max_freq-min_freq)/size_of_window;
 
@@ -267,18 +382,47 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	for(int j = 0; j < header.channels; j ++)
 		vDataTmpCh[j].resize(size_of_window);
 
-	if( !this->nl_play ){
-		printf("max freq    %6d\n", max_freq);
-		printf("window size %6d\n", size_of_window);
-		printf("min freq    %7.3f\n", min_freq);
-		printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
-	} else {
-		mvprintw(1,1,"max freq    %6d\n", max_freq);
-		mvprintw(2,1,"window size %6d\n", size_of_window);
-		mvprintw(3,1,"min freq    %7.3f\n", min_freq);
-		mvprintw(4,1,"step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+	printf("num samples %6ld\n", num_samples);
+	printf("max freq    %6d\n", max_freq);
+	printf("window size %6d\n", size_of_window);
+	printf("min freq    %7.3f\n", min_freq);
+	printf("step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
+
+	int nl_char = -1;
+	if( this->nl_play ){
+		// http://www.cplusplus.com/forum/beginner/248599/
+		initscr();
+		clear();
+		curs_set(0);
+  		noecho();
+  		cbreak();
+		keypad(stdscr, true);
+		refresh();
+		nl_band_focus = -1;
+
+		mvprintw(1,1,"num samples %6ld\n", num_samples);
+		mvprintw(2,1,"max freq    %6d\n", max_freq);
+		mvprintw(3,1,"window size %6d\n", size_of_window);
+		mvprintw(4,1,"min freq    %7.3f\n", min_freq);
+		mvprintw(5,1,"step        %7.3f\n", (double) (max_freq-min_freq)/size_of_window);
 		refresh();
 	}
+
+
+	vFreq2Band.resize(size_of_window,0);
+	{
+		int bid = 0;
+		for(int i = 0; i < size_of_window; i ++){
+			if( bid < vBandFreq.size()-1 && vBandFreq[bid] < (int)min_freq + band_step * i ){
+				bid ++ ;
+			}
+			vFreq2Band[i] = bid;
+			//printf("%d %d %d %d\n",bid, nBand, (int)min_freq + band_step * i, vBandFreq[bid]);\
+			assert(bid<nBand);
+		}
+	}
+	
+	
 	
 
 
@@ -347,6 +491,7 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		oal.init_extern_queue( al_sample_per_batch, al_format, header.sample_rate );
 		oal.wait();
 	}
+
 	for(int i = 0; i < num_samples; i ++){
 		if( this->nl_play ){
 			timeout(0);
@@ -365,8 +510,13 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 			for(int k = 0; k < size_of_window; k ++) // k-th freq 
 				real += vCpx[k].real * vInvCos[k] - vCpx[k].img * vInvSin[k];
 
-
+			real *= totalVolumnMul;
 			int channel_data_out = real/size_of_window/cpx_mult;
+			if( ubound < channel_data_out )
+				channel_data_out = ubound;
+			else
+			if( lbound > channel_data_out )
+				channel_data_out = lbound;
 			for(int k = 0; k < bytes_per_channel; k ++ )
 				data_buffer[ j*bytes_per_channel + k ] = (channel_data_out >> (8*k)) & 0x00ff;
 			//if(postr && fPlot) (*postr) << channel_data_out << " ";
@@ -390,15 +540,7 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 				vFreqTmpChTh = vFreqTmpCh;
 				vTh.push_back(std::thread( &Ceq_Man_t::compute_band_vol, this, &vFreqTmpChTh, band_vol_buf_top, band_step, min_freq, size_of_window));
 			}
-			//int vol_panel_match_index = (i - al_sample_per_batch*2)/nl_update_per_sample;
 			int vol_panel_match_index = (oal.num_al_push()) * al_sample_per_batch / nl_update_per_sample;
-//			if((int)vol_panel_match_index >= (int)vBandVolBuf.size()){
-//				mvprintw(10,10,"~~~~~~~~~~~~~~~~~~~ %d %d %d  ", vol_panel_match_index, oal.num_al_push(), vBandVolBuf.size());
-//				assert(vol_panel_match_index >= vBandVolBuf.size());
-//				refresh();
-//				assert(false);
-//			}
-//			assert( (int) vol_panel_match_index < (int) vBandVolBuf.size() );
 			if( 0 <= vol_panel_match_index && vBandVolBuf[vol_panel_match_index].size() && vol_panel_mutex.try_lock() ){
 				vol_panel_mutex.unlock();
 				vVolPanelTh.push_back(std::thread( &Ceq_Man_t::vol_update_panel, this, vol_panel_match_index, size_of_window));
@@ -414,8 +556,68 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 				refresh();
 				break;
 			} else 
-				mvprintw(5,1,"last input: %c", nl_char);
-			
+				mvprintw(5,1,"last input: %2c ", nl_char);
+			switch(nl_char){
+				case '-':
+					if( -1 == nl_band_focus ){
+						totalVolumn -= -10.0f<totalVolumn? 0.1: 0;
+						totalVolumnMul = pow(2,totalVolumn);
+					}
+					else {
+						vBandGain[nl_band_focus] -= -10.0f<vBandGain[nl_band_focus]? 0.025: 0;
+						vBandGainMul[nl_band_focus] = pow(2,vBandGain[nl_band_focus]);
+					}
+					break;
+				case '=':
+					if( -1 == nl_band_focus ){
+						totalVolumn += 5.0f>totalVolumn? 0.0125: 0;
+						totalVolumnMul = pow(2,totalVolumn);
+					}
+					else {
+						vBandGain[nl_band_focus] += 10.0f>vBandGain[nl_band_focus]? 0.0125: 0;
+						vBandGainMul[nl_band_focus] = pow(2,vBandGain[nl_band_focus]);
+					}
+					
+					break;
+				case 'm':
+					if( -1 == nl_band_focus )
+						;//totalVolumnMul = 0;
+					else 
+						vBandGainMul[nl_band_focus] = 0;
+					break;
+				case '2':
+					if( -1 == nl_band_focus ){
+						totalVolumn += 5.0f>totalVolumn? 1: 0;
+						totalVolumnMul = pow(2,totalVolumn);
+					} else {
+						vBandGain[nl_band_focus] += 10.0f>vBandGain[nl_band_focus]? 1: 0;
+						vBandGainMul[nl_band_focus] = pow(2,vBandGain[nl_band_focus]);
+					}
+					break;
+				case '/':
+					if( -1 == nl_band_focus ){
+						totalVolumn -= -10.0f<totalVolumn? 1: 0;
+						totalVolumnMul = pow(2,totalVolumn);
+					} else {
+						vBandGain[nl_band_focus] -= -10.0f<vBandGain[nl_band_focus]? 1: 0;
+						vBandGainMul[nl_band_focus] = pow(2,vBandGain[nl_band_focus]);
+					}
+					break;
+				case KEY_UP:
+					nl_band_focus += nBand-1 > nl_band_focus? 1: 0;
+					break;
+				case KEY_DOWN:
+					nl_band_focus -= 0 < nl_band_focus? 1: 0;
+					break;
+				case KEY_LEFT:
+					if(-1 == nl_band_focus)
+						nl_band_focus = 0;
+					break;
+				case KEY_RIGHT:
+					nl_band_focus = -1;
+					break;
+			}
+			//clrtoeol();
 			nl_char = -1;
 		}
 
