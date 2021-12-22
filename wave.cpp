@@ -19,8 +19,9 @@ int main(int argc, char **argv) {
 //	oal.finalize();
 //	return 0;
 	ceq::Ceq_Man_t ceq(argv[1]);
-	ceq::print_wav_header(ceq.header);
+	//ceq::print_wav_header(ceq.header);
 
+	//ceq.config_play(0);
 	std::ofstream ostr1("tmp.wav");\
 	ceq.run_prefetch_filter(&ostr1);\
 	ostr1.close();

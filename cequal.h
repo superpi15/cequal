@@ -20,8 +20,9 @@ namespace ceq {
 
 class Cpx_t {
 public:
-	double real, img;
-	Cpx_t(double _real, double _img): real(_real), img(_img) {}
+	typedef float data_t;
+	data_t real, img;
+	Cpx_t(data_t _real, data_t _img): real(_real), img(_img) {}
 	Cpx_t(): real(0), img(0){}
 	void print(){printf("(%f,%f)",real,img);}
 
@@ -38,21 +39,18 @@ inline Cpx_t operator-(const Cpx_t& n1, const Cpx_t& n2){
 
 class Ceq_Man_t {
 	bool al_play;
+	int cpx_mult;
 public:
 	std::string filename;
 	WavHeader_t header;
 	int nBand;
 	Ceq_Man_t(char * nfilename){
-		//memset(this,0,sizeof(Ceq_Man_t));
+		cpx_mult = 0;
 		setDefault();
 		filename = nfilename;
 		read_wav_header(nfilename,header,0);
-		if( al_play )
-			oal.init();
 	}
 	~Ceq_Man_t(){
-		if( al_play )
-			oal.finalize();
 	}
 	Oal_Man_t oal;
 	void setDefault();
@@ -61,26 +59,29 @@ public:
 
 	double time_stamp;                // keep progress for dynamic adjustment 
 	std::vector<Cpx_t> vDFTW;         // DFT weight
+	void config_play(bool flag){ al_play = flag;}
 
 	void runFilter(std::ostream * postr=NULL, int fPlot=0);
 	void run_prefetch_filter(std::ostream * postr=NULL, int fPlot=0, const bool fft=true);
-	void run_fft(const std::vector<double>& vDataIn, std::vector<Cpx_t> * pvCpx=NULL);
+	void run_fft(const std::vector<Cpx_t::data_t>& vDataIn, std::vector<Cpx_t> * pvCpx=NULL);
 	int window_size;
 };
 
 inline void Ceq_Man_t::setDefault(){
 	al_play = true;
+	cpx_mult = 1;
 	vDFTW.resize(20);
 	for(int i = 0; i < vDFTW.size(); i ++){
 		double angular_unit = 2*CEQUAL_PI / (1<<i);
-		vDFTW[i] = Cpx_t(cos(angular_unit), sin(angular_unit));
+		vDFTW[i] = Cpx_t(cpx_mult * cos(angular_unit),cpx_mult * sin(angular_unit));
+		//printf(" %d %d\n", vDFTW[i].real, vDFTW[i].img);
 	}
 	nBand = 11;
 	window_size = nBand;
 	int max_freq = 44100;
 }
 
-inline void Ceq_Man_t::run_fft(const std::vector<double>& vDataIn, std::vector<Cpx_t> * pvCpx){
+inline void Ceq_Man_t::run_fft(const std::vector<Cpx_t::data_t>& vDataIn, std::vector<Cpx_t> * pvCpx){
 	std::vector<Cpx_t> vCpxIn, vResult;
 	int size_of_window = vDataIn.size();
 	
@@ -141,7 +142,7 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	long bytes_per_channel = (bytes_per_sample / header.channels);
 	long num_samples = (8 * header.data_size) / (header.channels * header.bits_per_channel);
 	char * data_buffer = (char*) malloc(bytes_per_sample);
-	std::vector< std::vector<double> > vData, vDataOut;
+	std::vector< std::vector<Cpx_t::data_t> > vData, vDataOut;
 
 
 	int al_top = 0, al_buf_size = 22050;
@@ -157,6 +158,11 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	int size_of_window = 512;
 	double min_freq = (double) max_freq / (size_of_window / 2);
 	double angular_unit = 2 * CEQUAL_PI / size_of_window;
+	
+	std::vector< std::vector<Cpx_t::data_t> > vDataTmpCh(header.channels);
+	for(int j = 0; j < header.channels; j ++)
+		vDataTmpCh[j].resize(size_of_window);
+
 	printf("max freq    %6d\n", max_freq);
 	printf("window size %6d\n", size_of_window);
 	printf("min freq    %7.3f\n", min_freq);
@@ -170,12 +176,13 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 		vDataOut[i].resize( num_samples, 0.0f );
 	}
 
-	std::vector<double> vInvSin, vInvCos;
+	std::vector<Cpx_t::data_t> vInvSin, vInvCos;
 	vInvSin.resize(size_of_window);
 	vInvCos.resize(size_of_window);
 	for(int i = 0; i < size_of_window; i ++){
-		vInvSin[i] = sin( - angular_unit * i * half_window_size );
-		vInvCos[i] = cos( - angular_unit * i * half_window_size );
+		vInvSin[i] = cpx_mult * sin( - angular_unit * i * half_window_size );
+		vInvCos[i] = cpx_mult * cos( - angular_unit * i * half_window_size );
+		//std::cout << vInvSin[i] <<" "<< vInvCos[i] << "\n";
 	}
 
 
@@ -221,31 +228,35 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 			}
 		} else
 			assert(false);
+
+		oal.init();
 		oal.init_extern_queue( header.sample_rate/4, al_format, header.sample_rate );
 		oal.play();
 	}
 
 	for(int i = 0; i < num_samples; i ++){
-		unsigned int odata_tmp = 0;
+
+		#pragma omp parallel for num_threads (2) if(1<header.channels)
 		for(int j = 0; j < header.channels; j ++){
-			std::vector<double> vDataTmp;
-			vDataTmp.resize(size_of_window);
+			std::vector<Cpx_t::data_t>& vDataTmp = vDataTmpCh[j];
 			for(int l = 0; l < size_of_window; l ++){
 				vDataTmp[l] = vData[j][l+i];
 			}
 			std::vector<Cpx_t> vCpx;
 			run_fft(vDataTmp, &vCpx);
 
-			double real = 0;
+			Cpx_t::data_t real = 0;
 			for(int k = 0; k < size_of_window; k ++) // k-th freq 
 				real += vCpx[k].real * vInvCos[k] - vCpx[k].img * vInvSin[k];
-			//vDataOut[j][i] = real/size_of_window;
 
-			int channel_data_out = real/size_of_window;
+
+			int channel_data_out = real/size_of_window/cpx_mult;
 			for(int k = 0; k < bytes_per_channel; k ++ )
 				data_buffer[ j*bytes_per_channel + k ] = (channel_data_out >> (8*k)) & 0x00ff;
 			//if(postr && fPlot) (*postr) << channel_data_out << " ";
 
+		}
+		for(int j = 0; j < header.channels; j ++){
 			if( this->al_play ){
 				for(int k = 0; k < bytes_per_channel; k ++ )
 					oal.push_byte(data_buffer[ j*bytes_per_channel + k ]);
@@ -270,8 +281,10 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	}/**/
 
 FINALIZE:
-	if( al_buf )
+	if( al_play ){
+		oal.finalize();
 		free(al_buf);
+	}
 	free(data_buffer);
 	fclose(fptr);
 }
