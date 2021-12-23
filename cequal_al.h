@@ -31,12 +31,13 @@ class Oal_Man_t {
 	ALenum format;
 public:
 	Oal_Man_t(){
+		ext_buf_top     = 0;
 		output_device   = NULL;
 		output_context  = NULL;
 		al_push_num     = 0;
 		sample_rate     = 0;
 		init_buf_top    = 0;
-		nbuffer = 4;
+		nbuffer = 8;
 		sample_per_buf = 22050;
 		ext_buf = NULL;
 		buffer_list = NULL;

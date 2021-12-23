@@ -6,7 +6,15 @@
 #define WAVE_H
 
 // WAVE file header format
-struct WavHeader_t {
+class WavHeader_t {
+public:
+	WavHeader_t(){
+		list_data = NULL;
+	}
+	~WavHeader_t(){
+		if(list_data)
+			free(list_data);
+	}
 	unsigned char riff[4];						// RIFF string
 	unsigned int overall_size	;				// overall size of file in bytes
 	unsigned char wave[4];						// WAVE string
@@ -20,6 +28,7 @@ struct WavHeader_t {
 	unsigned int bits_per_channel;				// bits per sample, 8- 8bits, 16- 16 bits etc
 	unsigned char data_chunk_header [4];		// DATA string or FLLR string
 	unsigned int data_size;						// NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
+	char * list_data;
 };
 
 inline void print_wav_header( WavHeader_t& header ){
@@ -82,8 +91,8 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	// open file
 	if( fVerbose )
 		printf("Opening  file..\n");
-	FILE * ptr = fopen(filename, "rb");
-	if (ptr == NULL) {
+	FILE * fptr = fopen(filename, "rb");
+	if (fptr == NULL) {
 		printf("Error opening file\n");
 		exit(1);
 	}
@@ -92,11 +101,11 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 
 	// read header parts
 
-	read = fread(header.riff, sizeof(header.riff), 1, ptr);
+	read = fread(header.riff, sizeof(header.riff), 1, fptr);
 	if( fVerbose )
 		printf("(1-4): %s \n", header.riff); 
 
-	read = fread(buffer4, sizeof(buffer4), 1, ptr);
+	read = fread(buffer4, sizeof(buffer4), 1, fptr);
 	if( fVerbose )
 		printf("%u %u %u %u\n", buffer4[0], buffer4[1], buffer4[2], buffer4[3]);
  
@@ -109,15 +118,15 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(5-8) Overall size: bytes:%u, Kb:%u \n", header.overall_size, header.overall_size/1024);
 
-	read = fread(header.wave, sizeof(header.wave), 1, ptr);
+	read = fread(header.wave, sizeof(header.wave), 1, fptr);
 	if( fVerbose )
 		printf("(9-12) Wave marker: %s\n", header.wave);
 
-	read = fread(header.fmt_chunk_marker, sizeof(header.fmt_chunk_marker), 1, ptr);
+	read = fread(header.fmt_chunk_marker, sizeof(header.fmt_chunk_marker), 1, fptr);
 	if( fVerbose )
 		printf("(13-16) Fmt marker: %s\n", header.fmt_chunk_marker);
 
-	read = fread(buffer4, sizeof(buffer4), 1, ptr);
+	read = fread(buffer4, sizeof(buffer4), 1, fptr);
 	if( fVerbose )
 		printf("%u %u %u %u\n", buffer4[0], buffer4[1], buffer4[2], buffer4[3]);
 
@@ -129,7 +138,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(17-20) Length of Fmt header: %u \n", header.length_of_fmt);
 
-	read = fread(buffer2, sizeof(buffer2), 1, ptr); 
+	read = fread(buffer2, sizeof(buffer2), 1, fptr); 
 	if( fVerbose )
 		printf("%u %u \n", buffer2[0], buffer2[1]);
 
@@ -145,7 +154,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(21-22) Format type: %u %s \n", header.format_type, format_name);
 
-	read = fread(buffer2, sizeof(buffer2), 1, ptr);
+	read = fread(buffer2, sizeof(buffer2), 1, fptr);
 	if( fVerbose )
 		printf("%u %u \n", buffer2[0], buffer2[1]);
 
@@ -153,7 +162,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(23-24) Channels: %u \n", header.channels);
 
-	read = fread(buffer4, sizeof(buffer4), 1, ptr);
+	read = fread(buffer4, sizeof(buffer4), 1, fptr);
 	if( fVerbose )
 		printf("%u %u %u %u\n", buffer4[0], buffer4[1], buffer4[2], buffer4[3]);
 
@@ -165,7 +174,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(25-28) Sample rate: %u\n", header.sample_rate);
 
-	read = fread(buffer4, sizeof(buffer4), 1, ptr);
+	read = fread(buffer4, sizeof(buffer4), 1, fptr);
 	if( fVerbose )
 		printf("%u %u %u %u\n", buffer4[0], buffer4[1], buffer4[2], buffer4[3]);
 
@@ -176,7 +185,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(29-32) Byte Rate: %u , Bit Rate:%u\n", header.byterate, header.byterate*8);
 
-	read = fread(buffer2, sizeof(buffer2), 1, ptr);
+	read = fread(buffer2, sizeof(buffer2), 1, fptr);
 	if( fVerbose )
 		printf("%u %u \n", buffer2[0], buffer2[1]);
 
@@ -184,7 +193,7 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(33-34) Block Alignment: %u \n", header.block_align);
 
-	read = fread(buffer2, sizeof(buffer2), 1, ptr);
+	read = fread(buffer2, sizeof(buffer2), 1, fptr);
 	if( fVerbose )
 		printf("%u %u \n", buffer2[0], buffer2[1]);
 
@@ -193,11 +202,11 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose )
 		printf("(35-36) Bits per channel: %u \n", header.bits_per_channel);
 
-	read = fread(header.data_chunk_header, sizeof(header.data_chunk_header), 1, ptr);
+	read = fread(header.data_chunk_header, sizeof(header.data_chunk_header), 1, fptr);
 	if( fVerbose )
 		printf("(37-40) Data Marker: %s \n", header.data_chunk_header);
 
-	read = fread(buffer4, sizeof(buffer4), 1, ptr);
+	read = fread(buffer4, sizeof(buffer4), 1, fptr);
 	if( fVerbose )
 		printf("%u %u %u %u\n", buffer4[0], buffer4[1], buffer4[2], buffer4[3]);
 
@@ -222,7 +231,27 @@ inline int read_wav_header(char * filename, WavHeader_t& header, int fVerbose ) 
 	if( fVerbose ){
 		printf("Approx.Duration in seconds=%f\n", duration_in_seconds);
 	}
-	fclose(ptr);
+
+	if( header.data_chunk_header[0] == 'L' ){
+		unsigned char * data_buffer = buffer4;
+		header.list_data = (char*) malloc(header.data_size);
+		int nRead = 0;
+		if(!fread(header.list_data, 1,header.data_size,fptr)){
+			printf("Invalid header of \'%s\'\n", filename);
+		} else {
+			if(!fread(data_buffer,4,1,fptr)){
+				printf("Invalid header of \'%s\': no data found\n", filename);
+			} else {
+				if( data_buffer[0]=='d' && data_buffer[1]=='a' && data_buffer[2]=='t' && data_buffer[3]=='a' ){
+					//memcpy(header.list_data+header.data_size, data_buffer, 4);
+				}
+				else {
+					printf("Invalid header of \'%s\': no data found(2)\n", filename);
+				}
+			}
+		}
+	}
+	fclose(fptr);
 	return 0;
 
 }
