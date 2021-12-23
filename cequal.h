@@ -342,6 +342,11 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	int data_size = header.data_size;
 	if( header.data_chunk_header[0]=='L' ){
 		int nRead = 1;
+
+		if( fseek(fptr, header.data_size, SEEK_CUR) ){
+			printf("Invalid header of \'%s\'\n", filename.c_str());
+			return;
+		}
 		while(fread(data_buffer,4,1,fptr)){
 			//printf("%3d %c%c%c%c \n", nRead, data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
 			if( data_buffer[0]=='d' && data_buffer[1]=='a' && data_buffer[2]=='t' && data_buffer[3]=='a' ){
