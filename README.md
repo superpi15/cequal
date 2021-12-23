@@ -6,7 +6,7 @@ Cequal stands for: C-based equalizer for educational purpose.
 
 This equalizer demonstrates a typical conversion between time and frequency -domain, often applied to audio processing. 
 
-It can amplifies or decrease volumn in the selected bands. 
+It can amplify or decrease volumn in the selected bands. 
 
 Better performance and higher spectrum resolution may be supported later. 
 
