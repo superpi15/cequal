@@ -1,19 +1,26 @@
-# cequal: C-based equalizer for educational purpose 
+# Cequal - Terminal DJ
+
+<img src="img/dj.png" width=80%>
+
+Cequal stands for: C-based equalizer for educational purpose. 
 
 This equalizer demonstrates a typical conversion between time and frequency -domain, often applied to audio processing. 
 
-* The current implementation uses smooth sine wave for sampling, in order to show numerical concept of DFT
-  * due to the precise computation, current version is computationally intensive and takes 8 threads by default
-  * current run time is almost the same as the lenth of the audio at (1) sample rate: 22050 and (2) single channel
-  * run time can be estimated by factoring, e.g., (1) sample rate: 44100 and (2) dual channel takes quadruple runtime. 
-* The square wave and thus FFT (Fast DFT) may be supported later.
+It can amplifies or decrease volumn in the selected bands. 
 
-This document is exported from: [https://github.com/superpi15/cequal/](https://github.com/superpi15/cequal/)
+Better performance and higher spectrum resolution may be supported later. 
+
+```diff
+- Warning: gently adjust volumn especially in low frequncy 
+```
 
 ## system prerequisite 
 
-* Open MP
+* pthread
 * g++ 
+* Open MP
+* Open AL
+* ncurses
 
 ## compile
 ```shell
@@ -26,6 +33,14 @@ sh compile.sh
 ./cequal <YOUR_WAV_FILE>
 ```
 Output file is named *tmp.wav*.
+
+## to do 
+
+* better performance for higher spectrum resolution (to solve frequnecy leakage)
+* refine ncurses refreshing synchronization 
+
+This document is exported from: [https://github.com/superpi15/cequal/](https://github.com/superpi15/cequal/)
+
 
 --- --- ---
 
