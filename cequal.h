@@ -71,6 +71,7 @@ public:
 	std::vector<int> vBandFreq, vBandIndex;
 	std::vector<double> vBandVol, vBandGain, vBandGainMul;
 	std::vector<bool> vBandMute;
+	std::vector<char> vBandLabel;
 	std::vector<int> vFreq2Band;
 	double totalVolumn, totalVolumnMul;
 	void config_al_play(bool flag){ al_play = flag;}
@@ -203,7 +204,7 @@ inline void Ceq_Man_t::vol_update_panel( int vol_buf_index, int size_of_window )
 		int j;
 		double vol_ratio = vBandVolBuf[vol_buf_index][i] / size_of_window;
 		int vol_portion = volumn_scale * vol_ratio;
-
+		mvprintw(dy+nBand-i-1,dx-2,"%c", vBandLabel[i]);
 		mvprintw(dy+nBand-i-1,dx,"%c", i == nl_band_focus? '*': ' ');
 		mvprintw(dy+nBand-i-1,dx+1," %c %6d %6.2f [", vBandMute[i]? 'm': ' ', vBandFreq[i], vol_ratio);
 		for(j = 0; j < volumn_scale; j ++)
@@ -225,7 +226,7 @@ inline void Ceq_Man_t::setDefault(){
 		vDFTW[i] = Cpx_t(cpx_mult * cos(angular_unit),cpx_mult * sin(angular_unit));
 		//printf(" %d %d\n", vDFTW[i].real, vDFTW[i].img);
 	}
-	nBand = 10;
+	nBand = 11;
 	volumn_scale = 20;
 	base_band_power = 6;
 	vBandFreq.resize(nBand);
@@ -235,10 +236,14 @@ inline void Ceq_Man_t::setDefault(){
 	totalVolumnMul = 1.0f;
 	vBandVol.resize(nBand,0);
 	vBandMute.resize(nBand,0);
+	vBandLabel.resize(nBand,' ');
 	for(int i = 0; i < nBand; i ++){
 		vBandFreq[i] = 1<<(i+base_band_power);
 	}
-	vBandFreq.back() = 20000;
+	vBandFreq[nBand-2] = 20000;
+	vBandFreq[nBand-1] = 24000;
+	vBandMute[nBand-1] = 1;
+	vBandLabel[nBand-1] = 'x';
 }
 
 inline void Ceq_Man_t::run_fft(std::vector<Cpx_t>& vCpxIn, std::vector<Cpx_t>& vResult, const std::vector<Cpx_t>& vDataIn, std::vector<Cpx_t> * pvCpx, bool fifft){
@@ -418,14 +423,14 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	vBandIndex.resize(nBand,0);
 	{
 		int bid = 0;
-		for(int i = 0; i < half_window_size; i ++){
+		for(int i = 0; i < size_of_window; i ++){
 			if( bid < vBandFreq.size()-1 && vBandFreq[bid] < (int)min_freq + band_step * i ){
 				vBandIndex[bid] = i;
 				bid ++ ;
 			}
 			vFreq2Band[i] = bid;
 			//vFreq2Band[i+half_window_size] = bid;
-			vFreq2Band[size_of_window-i-1] = vBandFreq.size()-1;
+			//vFreq2Band[size_of_window-i-1] = vBandFreq.size()-1;
 			//printf("%d %d %d %d\n",bid, nBand, (int)min_freq + band_step * i, vBandFreq[bid]);\
 			assert(bid<nBand);
 		}

@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
 //	oal.finalize();
 //	return 0;
 	ceq::Ceq_Man_t ceq(argv[1]);
-	//ceq::print_wav_header(ceq.header);
+	ceq::print_wav_header(ceq.header);
 	//ceq.scanSample();
 	//return 0;
 	//ceq.config_al_play(0);
