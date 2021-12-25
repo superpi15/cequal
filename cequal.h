@@ -113,6 +113,9 @@ inline void Ceq_Man_t::scanSample(){
 	//if(postr && !fPlot) writeHeader(*postr);
 
 	int nRead = 1;
+	for(nRead = 0; nRead < header.data_size; nRead++, fread(data_buffer,1,1,fptr))
+		printf("%c", data_buffer[0]);
+	printf("\n");
 	while(fread(data_buffer,4,1,fptr)){
 		printf("%3d %c%c%c%c \n", nRead, data_buffer[0], data_buffer[1], data_buffer[2], data_buffer[3]);
 		if( data_buffer[0]=='d' && data_buffer[1]=='a' && data_buffer[2]=='t' && data_buffer[3]=='a' ){
@@ -524,8 +527,16 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 
 	for(int i = 0; i < num_samples; i ++){
 		if(!fread(data_buffer,bytes_per_sample,1,fptr)){
-			printf("Data loading mismatch\n");
-			goto FINALIZE;
+			if( this->nl_play )
+				mvprintw(40,1,"Warning: Data loading mismatch");
+			else
+				printf("Warning: Data loading mismatch\n");
+			for(int j = 0; j < header.channels; j ++){
+				vData   [j].resize(i);
+				vDataOut[j].resize(i);
+			}
+			num_samples = i;
+			break;
 		}
 		for(int j = 0; j < header.channels; j ++){
 			int channel_data_in = 0;
@@ -729,7 +740,8 @@ inline void Ceq_Man_t::run_prefetch_filter(std::ostream * postr, int fPlot, cons
 	if( postr ){
 		if( !fPlot && header.data_chunk_header[0]=='L' ){
 			postr->write( header.list_data, header.data_size );
-			(*postr)<<"data"<<data_size;
+			(*postr)<<"data";
+			postr->write( (char*) &data_size, 4 );
 		}
 		for(int i = 0; i < num_samples; i ++){
 			for(int j = 0; j < header.channels; j ++){
