@@ -24,6 +24,8 @@ int main(int argc, char **argv) {
 	//return 0;
 	//ceq.config_al_play(0);
 	//ceq.config_nl_play(0);
+	ceq.config_sample_status(1);
+	//ceq.config_play_status(0);
 	const char * oname = 2 < argc? argv[2]: "tmp.wav";
 	std::ofstream ostr1(oname);\
 	ceq.run_prefetch_filter(&ostr1,0);\
