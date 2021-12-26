@@ -30,9 +30,9 @@ sh compile.sh
 ## run 
 
 ```shell
-./cequal <YOUR_WAV_FILE>
+./cequal <YOUR_WAV_FILE> [OUTPUT.WAV (optional)]
 ```
-Output file is named *tmp.wav*.
+Output file by default is named *tmp.wav*.
 
 ## to do 
 
