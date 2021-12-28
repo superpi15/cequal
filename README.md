@@ -86,7 +86,7 @@ Define
 Partition into even and odd part 
 
 <p align="center">
-<img src="https://latex.codecogs.com/svg.latex?{X(k)=\sum^{N-1}_{r=0,n=2r}x(n)W^{kn}_{N}+\sum^{N-1}_{r=0,n=2r+1}x(n)W^{kn}_{N}}"/>
+<img src="https://latex.codecogs.com/svg.latex?{X(k)=\sum^{N/2-1}_{r=0,n=2r}x(n)W^{kn}_{N}+\sum^{N/2-1}_{r=0,n=2r+1}x(n)W^{kn}_{N}}"/>
 </p>
 
 Using the identiry 
